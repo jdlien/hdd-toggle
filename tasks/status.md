@@ -119,8 +119,8 @@ This project provides elegant power control for a mechanical hard drive in Windo
 1. **GUI Application**: Simple Windows Forms app with wake/sleep buttons
 2. **System Tray Integration**: Background service with notification area icon
 3. **Scheduled Tasks**: Automatic sleep/wake based on time or usage patterns
-4. **Multiple Drive Support**: Extend to handle additional drives with different relays
+4. **GUI Version**: Create a version with a notification tray to make it easier to control the drive without using CLI
 
 ---
-*Status: Production Ready*  
+*Status: Production Ready*
 *Last Updated: 2025-08-24*
