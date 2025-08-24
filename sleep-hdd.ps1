@@ -1,4 +1,4 @@
-# Sleep HDD Script - Minimal Implementation
+# Sleep HDD Script - RemoveDrive-based
 # Target: WDC WD181KFGX-68AFPN0 (SN: 2VH7TM9L)
 
 [CmdletBinding()]
@@ -17,156 +17,167 @@ if ($Help) {
     Write-Host "  -Offline    Take disk offline before power down (requires Administrator)"
     Write-Host "  -Help, -h   Show this help message"
     Write-Host ""
-    Write-Host "Examples:"
-    Write-Host "  .\sleep-hdd.ps1           # Standard sleep (no admin required)"
-    Write-Host "  .\sleep-hdd.ps1 -Offline  # Offline then sleep (requires admin)"
-    Write-Host ""
-    Write-Host "Note: Drive is configured for hot plug, so offline is optional"
+    Write-Host "Notes:"
+    Write-Host "  - Uses RemoveDrive.exe (on PATH) to request safe removal (with -b)"
+    Write-Host "  - Falls back to relay power-off regardless"
     exit 0
 }
 
 $serial = '2VH7TM9L'
-$model = 'WDC WD181KFGX-68AFPN0'
+$model  = 'WDC WD181KFGX-68AFPN0'
 
-# Check admin only if offline is requested
-if ($Offline) {
-    $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
-    if (-not $isAdmin) {
-        Write-Error "The -Offline parameter requires administrative privileges. Please run as Administrator or omit -Offline."
-        exit 1
-    }
-}
-
-# Early check: Is the drive already offline/powered down?
-Write-Host "Checking current drive status..." -ForegroundColor Cyan
-
-$existingPnp = Get-PnpDevice -Class 'DiskDrive' | Where-Object {
-    $_.InstanceId -match $serial -or $_.FriendlyName -match $model
-}
-
-$existingDisk = $null
-if ($existingPnp -and $existingPnp.Status -eq "OK") {
-    $existingDisk = Get-Disk | Where-Object {
-        $_.SerialNumber -match $serial -or $_.FriendlyName -match $model
-    }
-}
-
-# Check if drive is already offline or not detected
-if (!$existingPnp -or $existingPnp.Status -ne "OK" -or !$existingDisk -or $existingDisk.IsOffline) {
-    Write-Host ""
-    Write-Host "DRIVE ALREADY OFFLINE" -ForegroundColor Green
-    Write-Host "Drive appears to already be offline or powered down"
-    if ($existingPnp) {
-        Write-Host "PnP Status: $($existingPnp.Status)"
-    } else {
-        Write-Host "PnP Status: Not detected"
-    }
-    Write-Host ""
-    Write-Host "No action needed - drive is already sleeping." -ForegroundColor Green
-    Write-Host "To wake the drive, run: .\wake-hdd.ps1" -ForegroundColor Cyan
-    exit 0
-}
-
-Write-Host "Drive currently online - proceeding with sleep sequence..." -ForegroundColor Yellow
-
-# Step 1: Take disk offline (optional, only used if -Offline specified)
-if ($Offline) {
-    Write-Host "Taking disk offline..." -ForegroundColor Cyan
+function Resolve-RemoveDrivePath {
     try {
-        Set-Disk -Number $existingDisk.Number -IsOffline $true
-        Start-Sleep -Seconds 2
+        $cmd = Get-Command RemoveDrive.exe -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
+        $local = Join-Path -Path (Get-Location) -ChildPath 'RemoveDrive.exe'
+        if (Test-Path $local) { return $local }
+        return $null
+    } catch { return $null }
+}
 
-        # Verify disk is offline
-        $diskStatus = Get-Disk -Number $existingDisk.Number -ErrorAction SilentlyContinue
-        if ($diskStatus -and $diskStatus.IsOffline) {
-            Write-Host "Disk successfully taken offline" -ForegroundColor Green
-        } else {
-            Write-Warning "Disk may not be fully offline yet"
+function Get-TargetDiskCim {
+    try {
+        $disks = Get-CimInstance -ClassName Win32_DiskDrive -ErrorAction Stop
+        return $disks | Where-Object { $_.SerialNumber -match $serial -or $_.Model -match $model } | Select-Object -First 1
+    } catch { return $null }
+}
+
+function Get-DiskLettersAndVolumes {
+    param(
+        [Parameter(Mandatory=$true)] $diskCim
+    )
+    $resultLetters = @()
+    $resultVolumes = @()
+    try {
+        $parts = Get-CimAssociatedInstance -InputObject $diskCim -Association Win32_DiskDriveToDiskPartition -ErrorAction Stop
+        foreach ($p in $parts) {
+            $ldisks = Get-CimAssociatedInstance -InputObject $p -Association Win32_LogicalDiskToPartition -ErrorAction SilentlyContinue
+            foreach ($ld in $ldisks) {
+                if ($ld.DeviceID) { $resultLetters += $ld.DeviceID.TrimEnd(':') }
+            }
         }
-    } catch {
-        Write-Warning "Failed to take disk offline: $($_.Exception.Message)"
-        Write-Host "Continuing with power down sequence anyway..." -ForegroundColor Yellow
+    } catch {}
+
+    # Map letters to volume GUIDs via Win32_Volume (no Storage module required)
+    if ($resultLetters.Count -gt 0) {
+        try {
+            $vols = Get-CimInstance -ClassName Win32_Volume -ErrorAction Stop
+            foreach ($v in $vols) {
+                if ($v.DriveLetter) {
+                    $dl = $v.DriveLetter.TrimEnd(':')
+                    if ($resultLetters -contains $dl) {
+                        if ($v.DeviceID) { $resultVolumes += $v.DeviceID }
+                    }
+                }
+            }
+        } catch {}
+    }
+
+    return [PSCustomObject]@{
+        Letters = ($resultLetters | Select-Object -Unique)
+        Volumes = ($resultVolumes | Select-Object -Unique)
     }
 }
 
-# Step 2: Power down relays
+function Invoke-RemoveDriveWithRetries {
+    param(
+        [Parameter(Mandatory=$true)][string[]] $Targets,
+        [int] $MaxTries = 3,
+        [int] $DelaySeconds = 2
+    )
+    $rd = Resolve-RemoveDrivePath
+    if (-not $rd) {
+        Write-Host "RemoveDrive.exe not found on PATH. Skipping safe removal and powering off." -ForegroundColor Yellow
+        return $false
+    }
+
+    for ($i = 1; $i -le $MaxTries; $i++) {
+        foreach ($t in $Targets) {
+            Write-Host "RemoveDrive attempt $($i): $($t) -b" -ForegroundColor Cyan
+            try {
+                $proc = Start-Process -FilePath $rd -ArgumentList $t, '-b' -Wait -PassThru -NoNewWindow
+                if ($proc.ExitCode -eq 0) {
+                    Write-Host "Safe removal succeeded via RemoveDrive ($t)" -ForegroundColor Green
+                    return $true
+                }
+            } catch {
+                Write-Host "RemoveDrive failed for $($t): $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        }
+        Start-Sleep -Seconds $DelaySeconds
+    }
+    return $false
+}
+
+# Discover target disk and identifiers
+Write-Host "Locating target disk..." -ForegroundColor Cyan
+$diskCim = Get-TargetDiskCim
+$letters = @()
+$volumes = @()
+$diskIndex = $null
+if ($diskCim) {
+    $diskIndex = $diskCim.Index
+    $ids = Get-DiskLettersAndVolumes -diskCim $diskCim
+    $letters = $ids.Letters | ForEach-Object { "{0}" -f $_ }
+    $volumes = $ids.Volumes
+}
+
+# Build target list for RemoveDrive: prefer letters first, then volume GUIDs
+$targets = @()
+foreach ($L in $letters) { $targets += ("$($L):") }
+foreach ($vg in $volumes) { $targets += $vg }
+
+if ($targets.Count -eq 0) {
+    Write-Host "No drive letters or volumes found for target; proceeding to power down relays." -ForegroundColor Yellow
+} else {
+    $removed = Invoke-RemoveDriveWithRetries -Targets $targets -MaxTries 3 -DelaySeconds 2
+    if (-not $removed) {
+        Write-Host "Safe removal did not complete after retries; proceeding anyway." -ForegroundColor Yellow
+    }
+}
+
+# Optional: take disk offline (admin) using diskpart, only if disk index known
+if ($Offline -and $null -ne $diskIndex) {
+    $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
+    if ($isAdmin) {
+        Write-Host "Taking disk offline via diskpart (Disk $diskIndex)..." -ForegroundColor Cyan
+        try {
+            $commands = @(
+                "select disk $diskIndex",
+                "offline disk"
+            )
+            $commands | diskpart | Out-Null
+            Start-Sleep -Seconds 1
+        } catch {
+            Write-Host "diskpart offline failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "-Offline requested, but script is not elevated; skipping offline." -ForegroundColor Yellow
+    }
+}
+
+# Always power down relays regardless of detection state
 Write-Host "Powering down HDD..." -ForegroundColor Cyan
 try {
-    # Turn off both relays simultaneously using relay.exe
     $result = Start-Process -FilePath "relay.exe" -ArgumentList "all", "off" -Wait -PassThru -NoNewWindow
     if ($result.ExitCode -ne 0) {
         Write-Error "Failed to deactivate relay power"
         exit 1
     }
-
     Write-Host "Power OFF: Both relays deactivated" -ForegroundColor Green
 } catch {
     Write-Error "Power deactivation failed: $($_.Exception.Message)"
     exit 1
 }
 
-# Step 3: Wait and verify drive has left the system
-Write-Host "Disconnecting..." -ForegroundColor Yellow
-Start-Sleep -Seconds 3
-
-# Step 4: PnP scan to verify drive is no longer detected
-Write-Host "Verifying drive disconnection..." -ForegroundColor Cyan
-
-# Optional: Trigger device refresh to help Windows recognize disconnection
-$taskName = "HDD-DeviceDetection"
-
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "Triggering device refresh to verify disconnection..." -ForegroundColor Yellow
-    schtasks /run /tn $taskName | Out-Null
-    Start-Sleep -Seconds 3
-}
-
-$maxAttempts = 6
-$attempt = 0
-$driveGone = $false
-
-do {
-    $attempt++
-    Write-Host "Disconnection verification attempt $attempt/$maxAttempts"
-
-    $checkPnp = Get-PnpDevice -Class 'DiskDrive' | Where-Object {
-        $_.InstanceId -match $serial -or $_.FriendlyName -match $model
-    }
-
-    if (!$checkPnp) {
-        Write-Host "Drive no longer detected in PnP devices" -ForegroundColor Green
-        $driveGone = $true
-        break
-    } elseif ($checkPnp.Status -ne "OK") {
-        Write-Host "Drive detected but status is: $($checkPnp.Status)" -ForegroundColor Yellow
-        $driveGone = $true
-        break
-    }
-
-    Start-Sleep -Seconds 2
-} while ($attempt -lt $maxAttempts)
-
-# Also check if disk is no longer visible to Windows
-$checkDisk = Get-Disk | Where-Object {
-    $_.SerialNumber -match $serial -or $_.FriendlyName -match $model
-} -ErrorAction SilentlyContinue
-
-# Step 5: Final status and user notification
 Write-Host ""
-if ($driveGone -or !$checkDisk) {
+if ($diskCim) {
     Write-Host "HDD SLEEP COMPLETE" -ForegroundColor Green
-    Write-Host "Drive has been successfully powered down and disconnected"
-    if ($checkPnp) {
-        Write-Host "PnP Status: $($checkPnp.Status)"
-    } else {
-        Write-Host "PnP Status: Not detected"
-    }
-    Write-Host "Disk Status: Not visible to Windows"
+    Write-Host "Drive: $($diskCim.Model)"
 } else {
     Write-Host "HDD POWER DOWN COMPLETE" -ForegroundColor Yellow
-    Write-Host "Drive powered down but may still be visible to Windows"
-    Write-Host "This is normal for some drive/controller combinations"
+    Write-Host "Drive not detected by Windows at time of power down"
 }
-
 Write-Host ""
 Write-Host "To wake the drive again, run: .\wake-hdd.ps1" -ForegroundColor Cyan

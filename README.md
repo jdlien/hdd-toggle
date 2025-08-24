@@ -27,7 +27,7 @@ Connect the hard drive's power supply (12V to Relay 1 and 5V to Relay 1) to the 
 ### Core Executables
 - **`relay.exe`** - USB HID relay controller (compiled from relay.c)
 - **`wake-hdd.ps1`** - Complete drive wake-up sequence
-- **`sleep-hdd.ps1`** - Safe drive shutdown sequence
+- **`sleep-hdd.ps1`** - Safe drive shutdown sequence (RemoveDrive-based)
 
 ### Source & Build
 - **`relay.c`** - C source code for USB HID relay control
@@ -45,6 +45,7 @@ Connect the hard drive's power supply (12V to Relay 1 and 5V to Relay 1) to the 
 - DCT Tech USB relay connected and detected by Windows
 - Target hard drive wired through relay contacts
 - Microsoft Visual Studio Build Tools (if recompiling)
+- `RemoveDrive.exe` on PATH (download from [uwe-sieber.de](https://www.uwe-sieber.de/drivetools_e.html))
 
 ### Basic Commands
 
@@ -53,18 +54,21 @@ Connect the hard drive's power supply (12V to Relay 1 and 5V to Relay 1) to the 
 .\wake-hdd.ps1
 ```
 - Powers up both relays
-- Triggers Windows device detection
-- Waits for drive to come online
+- Triggers Windows device detection (elevated rescan, may prompt)
+- Brings disk online if offline (requires Administrator)
 - Reports status when ready
 
 #### Sleep Drive
 ```powershell
-# Standard sleep (hot-unplug compatible)
 .\sleep-hdd.ps1
 
 # Take disk offline before power down (safer but requires Admin permission)
 .\sleep-hdd.ps1 -Offline
 ```
+- Uses [`RemoveDrive.exe`](https://www.uwe-sieber.de/drivetools_e.html) (must be on PATH) to request safe removal with `-b` (shows Windows toast)
+- Tries mapped drive letters first, then volume GUIDs; up to 3 attempts
+- Optional: takes disk offline via diskpart when `-Offline` and elevated
+- Always powers off relays regardless of detection
 
 #### Manual Relay Control
 ```cmd
@@ -107,20 +111,20 @@ The relay uses standard USB HID interface with these specifications:
 ### Windows Integration
 - PnP device enumeration and detection
 - Disk Management API integration
-- Automatic privilege escalation when needed
-- Multi-method device detection with fallbacks
+- Elevated device rescan for reliable detection (prompts once if needed)
 
 ## Build Instructions
 
-To rebuild `relay.exe` from source:
+To rebuild utilities from source:
 
 ```cmd
-# Standard build (standalone executable)
+# Standard build (standalone executables)
 compile.bat
 
 # Smaller build (requires VC++ redistributable)
 compile.bat small
 ```
+This builds `relay.exe`. Download [`RemoveDrive.exe`](https://www.uwe-sieber.de/drivetools_e.html) separately and ensure it is on PATH for the sleep flow.
 
 Requires Microsoft Visual Studio Build Tools or Visual Studio with C++ components.
 
