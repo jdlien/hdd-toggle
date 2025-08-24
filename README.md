@@ -4,10 +4,9 @@ A Windows-based system for elegantly powering on/off mechanical hard drives usin
 
 ## Overview
 
-This project provides safe, automated power control for a specific 18TB WDC hard drive (Model: WD181KFGX-68AFPN0, Serial: 2VH7TM9L) through physical relay switching combined with Windows device management.
+This project provides safe, automated power control for a specific hard drive through physical relay switching combined with Windows device management.
 
-**Target Drive**: WDC WD181KFGX-68AFPN0 (Serial: 2VH7TM9L)  
-**USB Relay**: DCT Tech 2-Channel USB HID Relay  
+**USB Relay**: DCT Tech 2-Channel USB HID Relay
 **Amazon Link**: https://www.amazon.ca/dp/B0DKBY5YM1
 
 ## Hardware Requirements
@@ -18,10 +17,10 @@ This project provides safe, automated power control for a specific 18TB WDC hard
 - **Interface**: USB HID (no drivers required)
 - **Relay Type**: 2-channel, 10A/250VAC, 10A/30VDC rated
 - **Control Protocol**: HID Feature Reports (9-byte packets)
-- **Purchase Link**: [Amazon.ca - B0DKBY5YM1](https://www.amazon.ca/dp/B0DKBY5YM1)
+- **Purchase Link**: [Amazon.ca - 2 Channel 5V USB Relay Module](https://www.amazon.ca/dp/B0DKBY5YM1)
 
 ### Wiring Setup
-Connect the hard drive's power supply (12V and 5V lines) through the relay's normally-open contacts. Both relays should be wired in series to completely cut power to the drive.
+Connect the hard drive's power supply (12V to Relay 1 and 5V to Relay 1) to the relay's normally-open contacts. Both relays should be wired in series to completely cut power to the drive.
 
 ## Files
 
@@ -63,7 +62,7 @@ Connect the hard drive's power supply (12V and 5V lines) through the relay's nor
 # Standard sleep (hot-unplug compatible)
 .\sleep-hdd.ps1
 
-# Take disk offline before power down (safer)
+# Take disk offline before power down (safer but requires Admin permission)
 .\sleep-hdd.ps1 -Offline
 ```
 
@@ -72,7 +71,7 @@ Connect the hard drive's power supply (12V and 5V lines) through the relay's nor
 # Turn on both relays
 relay.exe all on
 
-# Turn off both relays  
+# Turn off both relays
 relay.exe all off
 
 # Control individual relays
@@ -94,7 +93,7 @@ The relay uses standard USB HID interface with these specifications:
 - **Report ID**: 0 (first byte)
 - **Command Byte** (second byte):
   - `0xFC` = All relays OFF
-  - `0xFE` = All relays ON  
+  - `0xFE` = All relays ON
   - `0xFD` = Single relay OFF (requires channel number in byte 3)
   - `0xFF` = Single relay ON (requires channel number in byte 3)
 
@@ -119,7 +118,7 @@ To rebuild `relay.exe` from source:
 # Standard build (standalone executable)
 compile.bat
 
-# Smaller build (requires VC++ redistributable)  
+# Smaller build (requires VC++ redistributable)
 compile.bat small
 ```
 
@@ -133,13 +132,6 @@ Requires Microsoft Visual Studio Build Tools or Visual Studio with C++ component
 3. **Compilation fails** - Ensure Visual Studio Build Tools are installed and accessible
 
 ### Verification Steps
-1. Test relay clicking: `relay.exe all on` then `relay.exe all off`
+1. Test relay clicking: `relay.exe on` then `relay.exe off`
 2. Check drive detection: Run `wake-hdd.ps1` and observe status messages
 3. Verify power control: Monitor drive spin-up/spin-down sounds
-
-## License
-
-This project is provided as-is for educational and personal use.
-
----
-*Hardware-specific implementation for WDC WD181KFGX-68AFPN0 drive control*
