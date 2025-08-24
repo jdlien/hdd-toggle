@@ -1,0 +1,20 @@
+# Windows scripts should always use CRLF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# C source files can use LF (standard for most C projects)
+*.c text eol=lf
+*.h text eol=lf
+
+# Markdown files use LF (standard)
+*.md text eol=lf
+
+# Binary files
+*.exe binary
+*.dll binary
+*.lib binary
+*.a binary
+*.obj binary
+
+# General text files default to auto (respects core.autocrlf)
+* text=auto
