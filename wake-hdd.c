@@ -228,7 +228,9 @@ int main(int argc, char* argv[]) {
     
     while (retry_count < max_retries && !GetDiskInfo(friendly_name, &disk_number)) {
         retry_count++;
-        printf("Drive not detected yet, waiting... (attempt %d/%d)\n", retry_count, max_retries);
+        if (retry_count == 1) {
+            printf("Drive not detected yet, waiting for initialization...\n");
+        }
         Sleep(3000); // Wait 3 seconds between retries
     }
     
