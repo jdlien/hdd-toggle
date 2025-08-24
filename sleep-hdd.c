@@ -104,7 +104,7 @@ BOOL GetTargetDiskInfo(char* model_out, int* disk_index) {
     snprintf(command, sizeof(command),
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
         "\"$disk = Get-CimInstance -ClassName Win32_DiskDrive | Where-Object { $_.SerialNumber -match '%s' -or $_.Model -match '%s' } -ErrorAction SilentlyContinue | Select-Object -First 1; "
-        "if ($disk) { Write-Output \"$($disk.Model)|$($disk.Index)\" | Out-File -FilePath '%s' -Encoding ASCII }\"",
+        "if ($disk) { '$($disk.Model)|$($disk.Index)' | Out-File -FilePath '%s' -Encoding ASCII }\"",
         TARGET_SERIAL, TARGET_MODEL, temp_file);
     
     if (ExecuteCommand(command, TRUE) == 0) {
@@ -147,8 +147,11 @@ int GetDriveLetters(char letters[][4], int max_letters) {
         "$parts = Get-CimAssociatedInstance -InputObject $disk -Association Win32_DiskDriveToDiskPartition -ErrorAction SilentlyContinue; "
         "foreach ($p in $parts) { "
         "$ldisks = Get-CimAssociatedInstance -InputObject $p -Association Win32_LogicalDiskToPartition -ErrorAction SilentlyContinue; "
-        "foreach ($ld in $ldisks) { if ($ld.DeviceID) { Write-Output $ld.DeviceID } } } } | Out-File -FilePath '%s' -Encoding ASCII\"",
+        "foreach ($ld in $ldisks) { if ($ld.DeviceID) { $ld.DeviceID | Out-File -FilePath '%s' -Encoding ASCII -Append } } } }\"",
         TARGET_SERIAL, TARGET_MODEL, temp_file);
+    
+    // Delete temp file first since we're using -Append
+    DeleteFile(temp_file);
     
     if (ExecuteCommand(command, TRUE) == 0) {
         Sleep(500);
@@ -301,7 +304,10 @@ int main(int argc, char* argv[]) {
             printf("\n");
             
             // 3. Attempt safe removal
-            AttemptSafeRemoval(letters, letter_count);
+            BOOL safe_removal_succeeded = AttemptSafeRemoval(letters, letter_count);
+            if (!safe_removal_succeeded) {
+                printf("WARNING: Safe removal failed - drive may not have been safely ejected\n");
+            }
         } else {
             printf("No drive letters found for target disk.\n");
         }
