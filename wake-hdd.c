@@ -88,14 +88,18 @@ BOOL GetDiskInfo(char* friendly_name, int* disk_number) {
     snprintf(command, sizeof(command),
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
         "\"$disk = Get-Disk | Where-Object { $_.SerialNumber -match '%s' -or $_.FriendlyName -match '%s' } -ErrorAction SilentlyContinue; "
-        "if ($disk) { Write-Output \\\"$($disk.FriendlyName)|$($disk.Number)\\\" }\" > %s",
+        "if ($disk) { Write-Output '$($disk.FriendlyName)|$($disk.Number)' | Out-File -FilePath '%s' -Encoding ASCII }\"",
         TARGET_SERIAL, TARGET_MODEL, temp_file);
     
     if (ExecuteCommand(command, TRUE) == 0) {
+        Sleep(500); // Give file time to be written
         fp = fopen(temp_file, "r");
         if (fp) {
             char line[256];
             if (fgets(line, sizeof(line), fp)) {
+                // Remove trailing newline/whitespace
+                line[strcspn(line, "\r\n")] = '\0';
+                
                 char* pipe_pos = strchr(line, '|');
                 if (pipe_pos) {
                     *pipe_pos = '\0';
@@ -124,7 +128,7 @@ BOOL TryElevatedDeviceRescan() {
     
     // ShellExecute returns > 32 on success
     if ((INT_PTR)result > 32) {
-        Sleep(4000); // Give time for elevated process to complete
+        Sleep(6000); // Give time for elevated process to complete (increased from 4s)
         return TRUE;
     }
     
@@ -207,7 +211,7 @@ int main(int argc, char* argv[]) {
     }
     printf("Power ON: Both relays activated\n");
     
-    Sleep(2000); // Wait for drive to initialize
+    Sleep(3000); // Wait for drive to initialize (increased from 2s)
     
     // 3. Device rescan (try elevated first, fallback to basic)
     printf("Scanning for new devices...\n");
@@ -215,13 +219,22 @@ int main(int argc, char* argv[]) {
         PerformBasicDeviceRescan();
     }
     
-    Sleep(2000); // Wait for device detection
+    Sleep(3000); // Wait for device detection (increased from 2s)
     
-    // 4. Verify drive is detected
+    // 4. Verify drive is detected (with retry logic)
     printf("Checking for target drive...\n");
+    int retry_count = 0;
+    int max_retries = 4; // Try for up to ~12 more seconds
+    
+    while (retry_count < max_retries && !GetDiskInfo(friendly_name, &disk_number)) {
+        retry_count++;
+        printf("Drive not detected yet, waiting... (attempt %d/%d)\n", retry_count, max_retries);
+        Sleep(3000); // Wait 3 seconds between retries
+    }
+    
     if (!GetDiskInfo(friendly_name, &disk_number)) {
-        printf("ERROR: Target drive not detected after device rescan.\n");
-        printf("The drive may need more time to initialize.\n");
+        printf("ERROR: Target drive not detected after %d seconds.\n", 6 + (max_retries * 3));
+        printf("The drive may need more time to initialize or there may be a hardware issue.\n");
         return 1;
     }
     
