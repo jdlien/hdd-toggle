@@ -37,13 +37,23 @@ if "%BUILD_TYPE%"=="dynamic" (
 )
 if exist wake-hdd.obj del wake-hdd.obj >nul 2>nul
 
+REM Build sleep-hdd.exe
+echo.
+echo Building sleep-hdd utility...
+if "%BUILD_TYPE%"=="dynamic" (
+    cl.exe /nologo /O1 /Os /MD sleep-hdd.c /Fe:sleep-hdd.exe shell32.lib advapi32.lib /link /OPT:REF /OPT:ICF
+) else (
+    cl.exe /nologo /O2 /MT sleep-hdd.c /Fe:sleep-hdd.exe shell32.lib advapi32.lib
+)
+if exist sleep-hdd.obj del sleep-hdd.obj >nul 2>nul
+
 if %errorlevel% equ 0 (
     echo.
     echo SUCCESS! Built utilities:
-    for %%f in (%OUTPUT_NAME% wake-hdd.exe) do if exist %%f echo   %%f - %%~zf bytes
+    for %%f in (%OUTPUT_NAME% wake-hdd.exe sleep-hdd.exe) do if exist %%f echo   %%f - %%~zf bytes
     if "%BUILD_TYPE%"=="dynamic" (
         echo.
-        echo NOTE: wake-hdd.exe/relay-small.exe require Visual C++ Redistributable 2015-2022
+        echo NOTE: wake-hdd.exe/sleep-hdd.exe/relay-small.exe require Visual C++ Redistributable 2015-2022
     ) else (
         echo.
         echo Binaries are standalone with no dependencies.
@@ -55,5 +65,5 @@ if %errorlevel% equ 0 (
 
 echo.
 echo Usage:
-echo   compile.bat         - Creates relay.exe and wake-hdd.exe (standalone)
-echo   compile.bat small   - Creates relay-small.exe and wake-hdd.exe (needs VC++ redist)
+echo   compile.bat         - Creates relay.exe, wake-hdd.exe, and sleep-hdd.exe (standalone)
+echo   compile.bat small   - Creates relay-small.exe, wake-hdd.exe, and sleep-hdd.exe (needs VC++ redist)
