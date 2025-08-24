@@ -95,6 +95,12 @@ This project provides elegant power control for a mechanical hard drive in Windo
 - **Target OS**: Windows 10/11
 - **Version Control**: Git with proper line ending handling (.gitattributes)
 
+## Pending Improvements
+1. **Code Signing**: Sign executables with SSL.com certificate to eliminate Windows Defender scan delays
+   - Have SSL.com standard certificate (non-EV, suitable for personal use)
+   - Use `signtool.exe` to sign `wake-hdd.exe` and `relay.exe`
+   - Will eliminate first-run security scanning delays and SmartScreen warnings
+
 ## Future Enhancements (Optional)
 1. **GUI Application**: Simple Windows Forms app with wake/sleep buttons
 2. **System Tray Integration**: Background service with notification area icon
