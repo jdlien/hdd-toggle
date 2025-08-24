@@ -31,9 +31,9 @@ REM Build wake-hdd.exe
 echo.
 echo Building wake-hdd utility...
 if "%BUILD_TYPE%"=="dynamic" (
-    cl.exe /nologo /O1 /Os /MD wake-hdd.c /Fe:wake-hdd.exe shell32.lib /link /OPT:REF /OPT:ICF
+    cl.exe /nologo /O1 /Os /MD wake-hdd.c /Fe:wake-hdd.exe shell32.lib advapi32.lib /link /OPT:REF /OPT:ICF
 ) else (
-    cl.exe /nologo /O2 /MT wake-hdd.c /Fe:wake-hdd.exe shell32.lib
+    cl.exe /nologo /O2 /MT wake-hdd.c /Fe:wake-hdd.exe shell32.lib advapi32.lib
 )
 if exist wake-hdd.obj del wake-hdd.obj >nul 2>nul
 

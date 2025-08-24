@@ -9,6 +9,7 @@
 #include <string.h>
 
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "advapi32.lib")
 
 #define TARGET_SERIAL "2VH7TM9L"
 #define TARGET_MODEL "WDC WD181KFGX-68AFPN0"
@@ -117,8 +118,8 @@ BOOL GetDiskInfo(char* friendly_name, int* disk_number) {
 BOOL TryElevatedDeviceRescan() {
     printf("Attempting elevated device rescan...\n");
     
-    HINSTANCE result = ShellExecute(NULL, L"runas", L"powershell.exe", 
-        L"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command \"try { pnputil /scan-devices | Out-Null } catch {} try { 'rescan' | diskpart | Out-Null } catch {} Start-Sleep -Seconds 2\"",
+    HINSTANCE result = ShellExecuteA(NULL, "runas", "powershell.exe", 
+        "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command \"try { pnputil /scan-devices | Out-Null } catch {} try { 'rescan' | diskpart | Out-Null } catch {} Start-Sleep -Seconds 2\"",
         NULL, SW_HIDE);
     
     // ShellExecute returns > 32 on success
