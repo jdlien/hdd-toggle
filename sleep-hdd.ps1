@@ -114,7 +114,7 @@ Write-Host "Verifying drive disconnection..." -ForegroundColor Cyan
 
 # Optional: Trigger device refresh to help Windows recognize disconnection
 $taskName = "HDD-DeviceDetection"
-$taskExists = schtasks /query /tn $taskName 2>$null
+
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Triggering device refresh to verify disconnection..." -ForegroundColor Yellow
     schtasks /run /tn $taskName | Out-Null
