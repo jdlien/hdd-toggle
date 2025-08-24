@@ -104,7 +104,7 @@ BOOL GetTargetDiskInfo(char* model_out, int* disk_index) {
     snprintf(command, sizeof(command),
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
         "\"$disk = Get-CimInstance -ClassName Win32_DiskDrive | Where-Object { $_.SerialNumber -match '%s' -or $_.Model -match '%s' } -ErrorAction SilentlyContinue | Select-Object -First 1; "
-        "if ($disk) { Write-Output '$($disk.Model)|$($disk.Index)' | Out-File -FilePath '%s' -Encoding ASCII }\"",
+        "if ($disk) { Write-Output \"$($disk.Model)|$($disk.Index)\" | Out-File -FilePath '%s' -Encoding ASCII }\"",
         TARGET_SERIAL, TARGET_MODEL, temp_file);
     
     if (ExecuteCommand(command, TRUE) == 0) {
@@ -147,8 +147,7 @@ int GetDriveLetters(char letters[][4], int max_letters) {
         "$parts = Get-CimAssociatedInstance -InputObject $disk -Association Win32_DiskDriveToDiskPartition -ErrorAction SilentlyContinue; "
         "foreach ($p in $parts) { "
         "$ldisks = Get-CimAssociatedInstance -InputObject $p -Association Win32_LogicalDiskToPartition -ErrorAction SilentlyContinue; "
-        "foreach ($ld in $ldisks) { if ($ld.DeviceID) { Write-Output $ld.DeviceID } } } } "
-        "\" | Out-File -FilePath '%s' -Encoding ASCII",
+        "foreach ($ld in $ldisks) { if ($ld.DeviceID) { Write-Output $ld.DeviceID } } } } | Out-File -FilePath '%s' -Encoding ASCII\"",
         TARGET_SERIAL, TARGET_MODEL, temp_file);
     
     if (ExecuteCommand(command, TRUE) == 0) {
@@ -204,18 +203,18 @@ BOOL FindRemoveDrive(char* path_out) {
     return FALSE;
 }
 
-// Attempt safe removal using RemoveDrive.exe
+// Attempt safe removal using RemoveDrive.exe with proper retry logic
 BOOL AttemptSafeRemoval(char letters[][4], int letter_count) {
     char removedrive_path[MAX_PATH_LEN];
     
     if (!FindRemoveDrive(removedrive_path)) {
-        printf("RemoveDrive.exe not found on PATH or current directory. Skipping safe removal.\n");
+        printf("RemoveDrive.exe not found on PATH or current directory. Skipping safe removal and powering off.\n");
         return FALSE;
     }
     
     printf("Found RemoveDrive.exe: %s\n", removedrive_path);
     
-    // Try each drive letter with retries
+    // Try each drive letter with retries (matches PowerShell logic)
     for (int retry = 1; retry <= 3; retry++) {
         for (int i = 0; i < letter_count; i++) {
             char command[MAX_COMMAND_LEN];
@@ -223,14 +222,17 @@ BOOL AttemptSafeRemoval(char letters[][4], int letter_count) {
             
             printf("RemoveDrive attempt %d: %s -b\n", retry, letters[i]);
             
-            if (ExecuteCommand(command, FALSE) == 0) {
+            int exit_code = ExecuteCommand(command, FALSE);
+            if (exit_code == 0) {
                 printf("Safe removal succeeded via RemoveDrive (%s)\n", letters[i]);
                 return TRUE;
+            } else {
+                printf("RemoveDrive failed for %s (exit code: %d)\n", letters[i], exit_code);
             }
         }
         
         if (retry < 3) {
-            printf("Retry attempt %d failed, waiting 2 seconds...\n", retry);
+            printf("Retrying in 2 seconds...\n");
             Sleep(2000);
         }
     }
