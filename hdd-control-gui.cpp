@@ -31,7 +31,7 @@
 #define IDM_EXIT 1004
 #define IDT_STATUS_TIMER 2001
 #define TRAY_ICON_ID 1
-#define IDI_MAIN_ICON 101
+#define IDI_MAIN_ICON 100
 
 // Drive states - must be defined before use
 typedef enum {
@@ -61,6 +61,7 @@ NOTIFYICONDATA g_nid;
 HMENU g_hMenu;
 DriveState g_driveState = DS_UNKNOWN;
 BOOL g_isTransitioning = FALSE;
+UINT WM_TASKBARCREATED = 0;  // Will be set by RegisterWindowMessage
 
 // Window procedure
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -125,75 +126,82 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             break;
 
         default:
+            // Handle TaskbarCreated message (Explorer restart)
+            if (uMsg == WM_TASKBARCREATED) {
+                CreateTrayIcon(hwnd);
+                UpdateTrayIcon();
+                return 0;
+            }
             return DefWindowProc(hwnd, uMsg, wParam, lParam);
     }
     return 0;
 }
 
-// Create system tray icon
+// Create system tray icon with modern best practices
 BOOL CreateTrayIcon(HWND hwnd) {
     ZeroMemory(&g_nid, sizeof(g_nid));
     g_nid.cbSize = sizeof(g_nid);
     g_nid.hWnd = hwnd;
     g_nid.uID = TRAY_ICON_ID;
-    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;  // Remove NIF_GUID temporarily
     g_nid.uCallbackMessage = WM_TRAYICON;
-    g_nid.uVersion = NOTIFYICON_VERSION_4;  // Use modern notification API
+    // g_nid.uVersion = NOTIFYICON_VERSION_4;  // Comment out version for now
     
-    // Load our custom HDD icon
-    // Method 1: Try loading from file in same directory as exe
-    char iconPath[MAX_PATH];
-    char exeDir[MAX_PATH];
-    GetModuleFileName(NULL, exeDir, MAX_PATH);
-    // Remove the exe filename to get directory
-    char* lastSlash = strrchr(exeDir, '\\');
-    if (lastSlash) *lastSlash = '\0';
-    sprintf_s(iconPath, MAX_PATH, "%s\\hdd-icon.ico", exeDir);
+    // Temporarily disable GUID to test basic functionality
+    // static const GUID trayIconGuid = 
+    //     { 0x7d6f1a94, 0x6b0f, 0x46b4, { 0x9a, 0x6e, 0x3a, 0x21, 0x7b, 0x52, 0x41, 0x12 } };
+    // g_nid.guidItem = trayIconGuid;
     
-    g_nid.hIcon = (HICON)LoadImage(NULL, 
-                                    iconPath, 
-                                    IMAGE_ICON, 
-                                    0, 0, 
-                                    LR_LOADFROMFILE | LR_DEFAULTSIZE);
+    // Load icon with proper size for system tray (SM_CXSMICON x SM_CYSMICON)
+    int cx = GetSystemMetrics(SM_CXSMICON);
+    int cy = GetSystemMetrics(SM_CYSMICON);
     
+    // Method 1: Load from resources with proper ID and size
+    g_nid.hIcon = (HICON)LoadImage(g_hInst, 
+                                   MAKEINTRESOURCE(IDI_MAIN_ICON),
+                                   IMAGE_ICON, 
+                                   cx, cy, 
+                                   LR_DEFAULTCOLOR);
+    
+    // Method 2: Fallback to legacy resource IDs if main fails
     if (!g_nid.hIcon) {
-        // Method 2: Load from resources embedded in the exe - try main icon first
         g_nid.hIcon = (HICON)LoadImage(g_hInst, 
-                                        MAKEINTRESOURCE(1), // Try main application icon first
-                                        IMAGE_ICON, 
-                                        0, 0, 
-                                        LR_DEFAULTSIZE | LR_SHARED);
+                                       MAKEINTRESOURCE(1),
+                                       IMAGE_ICON, 
+                                       cx, cy, 
+                                       LR_DEFAULTCOLOR);
     }
     
+    // Method 3: Try loading from external file as last resort
     if (!g_nid.hIcon) {
-        // Method 2b: Try the numbered icon resource
-        g_nid.hIcon = (HICON)LoadImage(g_hInst, 
-                                        MAKEINTRESOURCE(101), // Use direct numeric ID
-                                        IMAGE_ICON, 
-                                        0, 0, 
-                                        LR_DEFAULTSIZE | LR_SHARED);
+        char iconPath[MAX_PATH];
+        char exeDir[MAX_PATH];
+        GetModuleFileName(NULL, exeDir, MAX_PATH);
+        char* lastSlash = strrchr(exeDir, '\\');
+        if (lastSlash) *lastSlash = '\0';
+        sprintf_s(iconPath, MAX_PATH, "%s\\hdd-icon.ico", exeDir);
+        
+        g_nid.hIcon = (HICON)LoadImage(NULL, 
+                                       iconPath, 
+                                       IMAGE_ICON, 
+                                       cx, cy, 
+                                       LR_LOADFROMFILE | LR_DEFAULTCOLOR);
     }
     
+    // Method 4: System fallback
     if (!g_nid.hIcon) {
-        // Method 3: Try extracting icon from our own exe
-        char exePath[MAX_PATH];
-        GetModuleFileName(NULL, exePath, MAX_PATH);
-        ExtractIconEx(exePath, 0, NULL, &g_nid.hIcon, 1);
-    }
-    
-    if (!g_nid.hIcon) {
-        // Method 4: Last fallback to system icon
         g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
     }
+    
     strcpy_s(g_nid.szTip, sizeof(g_nid.szTip), "HDD Control - Checking status...");
 
-    // First add the tray icon
+    // Add the tray icon
     BOOL result = Shell_NotifyIcon(NIM_ADD, &g_nid);
     
-    // Set the version for modern notification support
-    if (result) {
-        Shell_NotifyIcon(NIM_SETVERSION, &g_nid);
-    }
+    // Skip version setting for now to test basic functionality
+    // if (result) {
+    //     Shell_NotifyIcon(NIM_SETVERSION, &g_nid);
+    // }
     
     return result;
 }
@@ -254,7 +262,7 @@ void UpdateTrayIcon() {
     }
     
     // Keep the icon flag to preserve the icon when updating
-    g_nid.uFlags = NIF_TIP | NIF_ICON;
+    g_nid.uFlags = NIF_TIP | NIF_ICON;  // Remove NIF_GUID for now
     Shell_NotifyIcon(NIM_MODIFY, &g_nid);
 }
 
@@ -436,18 +444,18 @@ int ExecuteCommand(const char* command, BOOL hide_window) {
     return exit_code;
 }
 
-// Show balloon notification (clean, no body icons)
+// Show balloon notification (safe, reliable approach)
 void ShowBalloonTip(const char* title, const char* text, DWORD icon) {
     g_nid.uFlags = NIF_INFO;
-    g_nid.dwInfoFlags = icon;  // Use system icons (NIIF_INFO, NIIF_WARNING, etc.)
+    g_nid.dwInfoFlags = icon;  // Use reliable system icons (NIIF_INFO, NIIF_WARNING, etc.)
     strcpy_s(g_nid.szInfoTitle, sizeof(g_nid.szInfoTitle), "");
     strcpy_s(g_nid.szInfo, sizeof(g_nid.szInfo), text);
     g_nid.uTimeout = 3000;
     
     Shell_NotifyIcon(NIM_MODIFY, &g_nid);
     
-    // Reset flags but keep icon
-    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    // Reset flags to original state
+    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;  // Remove NIF_GUID for now
 }
 
 // Wake drive action
@@ -534,37 +542,58 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     
     g_hInst = hInstance;
     
-    // Register window class with our icon
-    WNDCLASS wc = {0};
+    // Register TaskbarCreated message for Explorer restart handling
+    WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
+    
+    // Register window class with proper icon support using WNDCLASSEX
+    WNDCLASSEX wc = { sizeof(WNDCLASSEX) };
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
+    wc.lpszClassName = "HDDControlTray";
     
-    // Load the application icon more robustly for toast notifications
+    // Load both large and small icons for complete coverage
     wc.hIcon = (HICON)LoadImage(hInstance, 
-                                MAKEINTRESOURCE(1), 
+                                MAKEINTRESOURCE(IDI_MAIN_ICON), 
                                 IMAGE_ICON, 
                                 GetSystemMetrics(SM_CXICON), 
                                 GetSystemMetrics(SM_CYICON),
                                 LR_DEFAULTCOLOR);
     
-    // Fallback if main icon fails
+    wc.hIconSm = (HICON)LoadImage(hInstance, 
+                                  MAKEINTRESOURCE(IDI_MAIN_ICON), 
+                                  IMAGE_ICON, 
+                                  GetSystemMetrics(SM_CXSMICON), 
+                                  GetSystemMetrics(SM_CYSMICON),
+                                  LR_DEFAULTCOLOR);
+    
+    // Fallback to legacy resource IDs if main fails
     if (!wc.hIcon) {
         wc.hIcon = (HICON)LoadImage(hInstance, 
-                                    MAKEINTRESOURCE(101), 
+                                    MAKEINTRESOURCE(1), 
                                     IMAGE_ICON, 
                                     GetSystemMetrics(SM_CXICON), 
                                     GetSystemMetrics(SM_CYICON),
                                     LR_DEFAULTCOLOR);
     }
     
-    // Last fallback to system icon
+    if (!wc.hIconSm) {
+        wc.hIconSm = (HICON)LoadImage(hInstance, 
+                                      MAKEINTRESOURCE(1), 
+                                      IMAGE_ICON, 
+                                      GetSystemMetrics(SM_CXSMICON), 
+                                      GetSystemMetrics(SM_CYSMICON),
+                                      LR_DEFAULTCOLOR);
+    }
+    
+    // Last fallback to system icons
     if (!wc.hIcon) {
         wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
     }
+    if (!wc.hIconSm) {
+        wc.hIconSm = LoadIcon(NULL, IDI_APPLICATION);
+    }
     
-    wc.lpszClassName = "HDDControlTray";
-    
-    if (!RegisterClass(&wc)) {
+    if (!RegisterClassEx(&wc)) {
         MessageBox(NULL, "Failed to register window class", "Error", MB_ICONERROR);
         ReleaseMutex(hMutex);
         CloseHandle(hMutex);

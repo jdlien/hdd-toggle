@@ -1,10 +1,14 @@
 #include <windows.h>
 
-// Define the icon resource with numeric ID
-101 ICON "hdd-icon.ico"
+// Define proper icon constants
+#define IDI_MAIN_ICON 100
 
-// Also define as main application icon (ID 1) for system tray settings
+// Main application icon - use consistent ID
+IDI_MAIN_ICON ICON "hdd-icon.ico"
+
+// Legacy compatibility (keep for old references)
 1 ICON "hdd-icon.ico"
+101 ICON "hdd-icon.ico"
 
 // Manifest for Windows 10/11 compatibility
 1 RT_MANIFEST "hdd-control.manifest"
