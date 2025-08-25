@@ -138,6 +138,7 @@ BOOL CreateTrayIcon(HWND hwnd) {
     g_nid.uID = TRAY_ICON_ID;
     g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     g_nid.uCallbackMessage = WM_TRAYICON;
+    g_nid.uVersion = NOTIFYICON_VERSION_4;  // Use modern notification API
     
     // Load our custom HDD icon
     // Method 1: Try loading from file in same directory as exe
@@ -186,7 +187,15 @@ BOOL CreateTrayIcon(HWND hwnd) {
     }
     strcpy_s(g_nid.szTip, sizeof(g_nid.szTip), "HDD Control - Checking status...");
 
-    return Shell_NotifyIcon(NIM_ADD, &g_nid);
+    // First add the tray icon
+    BOOL result = Shell_NotifyIcon(NIM_ADD, &g_nid);
+    
+    // Set the version for modern notification support
+    if (result) {
+        Shell_NotifyIcon(NIM_SETVERSION, &g_nid);
+    }
+    
+    return result;
 }
 
 // Remove tray icon
@@ -427,11 +436,11 @@ int ExecuteCommand(const char* command, BOOL hide_window) {
     return exit_code;
 }
 
-// Show balloon notification (working approach with system icons)
+// Show balloon notification (clean, no body icons)
 void ShowBalloonTip(const char* title, const char* text, DWORD icon) {
-    g_nid.uFlags = NIF_INFO | NIF_ICON;
-    g_nid.dwInfoFlags = icon;  // Use the passed icon type (NIIF_INFO, NIIF_WARNING, etc.)
-    strcpy_s(g_nid.szInfoTitle, sizeof(g_nid.szInfoTitle), "");  // Remove redundant "HDD Control" title
+    g_nid.uFlags = NIF_INFO;
+    g_nid.dwInfoFlags = icon;  // Use system icons (NIIF_INFO, NIIF_WARNING, etc.)
+    strcpy_s(g_nid.szInfoTitle, sizeof(g_nid.szInfoTitle), "");
     strcpy_s(g_nid.szInfo, sizeof(g_nid.szInfo), text);
     g_nid.uTimeout = 3000;
     
@@ -493,7 +502,7 @@ void OnRefreshStatus() {
 // Main entry point
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     // Create mutex to ensure single instance
-    HANDLE hMutex = CreateMutex(NULL, TRUE, "Global\\HDDControlGUI_SingleInstance");
+    HANDLE hMutex = CreateMutex(NULL, TRUE, "Global\\HDDControlGUI_v2_SingleInstance");
     
     if (hMutex == NULL || GetLastError() == ERROR_ALREADY_EXISTS) {
         // Another instance is already running
@@ -529,7 +538,30 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     WNDCLASS wc = {0};
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
-    wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(1));  // Set main app icon
+    
+    // Load the application icon more robustly for toast notifications
+    wc.hIcon = (HICON)LoadImage(hInstance, 
+                                MAKEINTRESOURCE(1), 
+                                IMAGE_ICON, 
+                                GetSystemMetrics(SM_CXICON), 
+                                GetSystemMetrics(SM_CYICON),
+                                LR_DEFAULTCOLOR);
+    
+    // Fallback if main icon fails
+    if (!wc.hIcon) {
+        wc.hIcon = (HICON)LoadImage(hInstance, 
+                                    MAKEINTRESOURCE(101), 
+                                    IMAGE_ICON, 
+                                    GetSystemMetrics(SM_CXICON), 
+                                    GetSystemMetrics(SM_CYICON),
+                                    LR_DEFAULTCOLOR);
+    }
+    
+    // Last fallback to system icon
+    if (!wc.hIcon) {
+        wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    }
+    
     wc.lpszClassName = "HDDControlTray";
     
     if (!RegisterClass(&wc)) {

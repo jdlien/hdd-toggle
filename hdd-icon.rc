@@ -11,8 +11,8 @@
 
 // Version information
 1 VERSIONINFO
-FILEVERSION     1,0,0,0
-PRODUCTVERSION  1,0,0,0
+FILEVERSION     1,0,2,0
+PRODUCTVERSION  1,0,2,0
 FILEFLAGSMASK   0x3fL
 FILEFLAGS       0x0L
 FILEOS          VOS_NT_WINDOWS32
@@ -25,11 +25,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "HDD Toggle Project"
             VALUE "FileDescription", "HDD Control"
-            VALUE "FileVersion", "1.0.0.0"
+            VALUE "FileVersion", "1.0.2.0"
             VALUE "InternalName", "HDD Control"
-            VALUE "OriginalFilename", "hdd-control-gui.exe"
+            VALUE "OriginalFilename", "hdd-control-gui-v2.exe"
             VALUE "ProductName", "HDD Control"
-            VALUE "ProductVersion", "1.0.0.0"
+            VALUE "ProductVersion", "1.0.2.0"
         END
     END
     BLOCK "VarFileInfo"
