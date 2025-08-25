@@ -22,6 +22,7 @@
 #pragma comment(lib, "wbemuuid.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
+#pragma comment(lib, "gdi32.lib")
 
 #define MAX_COMMAND_LEN 1024
 #define WM_TRAYICON (WM_USER + 1)
@@ -31,6 +32,7 @@
 #define IDM_EXIT 1004
 #define IDM_WAKE_COMPLETE 1005
 #define IDM_SLEEP_COMPLETE 1006
+#define IDM_STATUS_DISPLAY 1007
 #define IDT_STATUS_TIMER 2001
 #define IDT_ANIMATION_TIMER 2002
 #define IDT_PERIODIC_CHECK 2003
@@ -63,19 +65,12 @@ struct AppConfig {
     char wakeCommand[MAX_PATH];
     char sleepCommand[MAX_PATH];
 
-    // Relay settings
-    DWORD vendorID;
-    DWORD productID;
-    int relayChannel;
-
     // Timing
     DWORD periodicCheckMinutes;
     DWORD postOperationCheckSeconds;
 
     // UI settings
     BOOL showNotifications;
-    DWORD animationSpeed;
-    DWORD notificationTimeout;
     DWORD clickDebounceSeconds;
 
     // Startup
@@ -115,14 +110,30 @@ HINSTANCE g_hInst;
 HWND g_hWnd;
 NOTIFYICONDATA g_nid;
 HMENU g_hMenu;
+HFONT g_hBoldMenuFont = NULL;  // Bold font for menu headers
 DriveState g_driveState = DS_UNKNOWN;
 BOOL g_isTransitioning = FALSE;
+char g_statusMenuText[64] = "";  // Store status text for owner-drawn menu
 UINT WM_TASKBARCREATED = 0;  // Will be set by RegisterWindowMessage
 UINT_PTR g_animationTimer = 0;
 int g_animationFrame = 0;
 ULONGLONG g_lastPeriodicCheck = 0;
 ULONGLONG g_lastClickTime = 0;
 AppConfig g_config = {0};
+
+// Ensure bold menu font is created
+static void EnsureBoldMenuFont(HWND hwnd) {
+    if (g_hBoldMenuFont) return;
+
+    NONCLIENTMETRICS ncm = { sizeof(ncm) };
+    SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
+
+    LOGFONT lf = ncm.lfMenuFont;
+    lf.lfWeight = FW_BOLD;
+    lf.lfQuality = CLEARTYPE_NATURAL_QUALITY;
+
+    g_hBoldMenuFont = CreateFontIndirect(&lf);
+}
 
 // Window procedure
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -187,11 +198,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 case IDM_SLEEP_COMPLETE:
                     StopProgressAnimation();
                     if (lParam == 0) {
-                        ShowBalloonTip("", "Drive sleep completed", NIIF_INFO);
+                        ShowBalloonTip("", "Drive shutdown completed", NIIF_INFO);
                     } else {
-                        ShowBalloonTip("", "Drive sleep failed", NIIF_WARNING);
+                        ShowBalloonTip("", "Drive shutdown failed", NIIF_WARNING);
                     }
                     SetTimer(hwnd, IDT_STATUS_TIMER, g_config.postOperationCheckSeconds * 1000, NULL);
+                    break;
+                case IDM_STATUS_DISPLAY:
+                    // Status display header - no action
                     break;
             }
             break;
@@ -225,10 +239,63 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             }
             break;
 
+        case WM_MEASUREITEM:
+            {
+                LPMEASUREITEMSTRUCT mis = (LPMEASUREITEMSTRUCT)lParam;
+                if (mis->CtlType == ODT_MENU && mis->itemID == IDM_STATUS_DISPLAY) {
+                    HDC hdc = GetDC(hwnd);
+                    HFONT hOldFont = (HFONT)SelectObject(hdc, g_hBoldMenuFont);
+
+                    LPCSTR txt = (LPCSTR)mis->itemData;
+                    SIZE sz = {0};
+                    GetTextExtentPoint32(hdc, txt, lstrlen(txt), &sz);
+
+                    UINT dpi = GetDpiForWindow(hwnd);
+                    int padX = MulDiv(12, dpi, 96);
+                    int padY = MulDiv(0, dpi, 96);
+
+                    mis->itemWidth = sz.cx + padX * 2;
+                    mis->itemHeight = sz.cy + padY * 2;
+
+                    SelectObject(hdc, hOldFont);
+                    ReleaseDC(hwnd, hdc);
+                    return TRUE;
+                }
+            }
+            break;
+
+        case WM_DRAWITEM:
+            {
+                LPDRAWITEMSTRUCT dis = (LPDRAWITEMSTRUCT)lParam;
+                if (dis->CtlType == ODT_MENU && dis->itemID == IDM_STATUS_DISPLAY) {
+                    // Fill background
+                    FillRect(dis->hDC, &dis->rcItem, GetSysColorBrush(COLOR_MENU));
+                    SetBkMode(dis->hDC, TRANSPARENT);
+                    SetTextColor(dis->hDC, GetSysColor(COLOR_MENUTEXT));
+
+                    HFONT hOldFont = (HFONT)SelectObject(dis->hDC, g_hBoldMenuFont);
+
+                    UINT dpi = GetDpiForWindow(g_hWnd);
+                    int padX = MulDiv(18, dpi, 96);
+                    RECT r = dis->rcItem;
+                    r.left += padX;
+
+                    DrawText(dis->hDC, (LPCSTR)dis->itemData, -1, &r, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
+
+                    SelectObject(dis->hDC, hOldFont);
+                    return TRUE;
+                }
+            }
+            break;
+
         case WM_DESTROY:
             RemoveTrayIcon();
             if (g_hMenu) {
                 DestroyMenu(g_hMenu);
+            }
+            if (g_hBoldMenuFont) {
+                DeleteObject(g_hBoldMenuFont);
+                g_hBoldMenuFont = NULL;
             }
             KillTimer(hwnd, IDT_STATUS_TIMER);
             KillTimer(hwnd, IDT_PERIODIC_CHECK);
@@ -324,18 +391,21 @@ void ShowContextMenu(HWND hwnd) {
 
     g_hMenu = CreatePopupMenu();
 
-    // Add status display at the top (bold/disabled so it can't be clicked)
-    const char* statusText;
+    // Ensure bold font exists
+    EnsureBoldMenuFont(hwnd);
+
+    // Add status display at the top (bold heading that can't be clicked)
     if (g_driveState == DS_ONLINE) {
-        statusText = "Drive Online";
+        strcpy_s(g_statusMenuText, sizeof(g_statusMenuText), "Drive Online");
     } else if (g_driveState == DS_OFFLINE) {
-        statusText = "Drive Offline";
+        strcpy_s(g_statusMenuText, sizeof(g_statusMenuText), "Drive Offline");
     } else if (g_driveState == DS_TRANSITIONING) {
-        statusText = "Drive Transitioning...";
+        strcpy_s(g_statusMenuText, sizeof(g_statusMenuText), "Drive Transitioning...");
     } else {
-        statusText = "Drive Status Unknown";
+        strcpy_s(g_statusMenuText, sizeof(g_statusMenuText), "Drive Status Unknown");
     }
-    AppendMenu(g_hMenu, MF_STRING | MF_GRAYED, 0, statusText);
+    // Use MF_DISABLED to prevent interaction, pass text as itemData
+    AppendMenu(g_hMenu, MF_OWNERDRAW | MF_DISABLED, IDM_STATUS_DISPLAY, (LPCSTR)g_statusMenuText);
     AppendMenu(g_hMenu, MF_SEPARATOR, 0, NULL);
 
     // Add appropriate action based on current drive state
@@ -464,16 +534,8 @@ void CreateDefaultIniFile() {
         "[UI]\n"
         "# User interface settings\n"
         "#ShowNotifications=true\n"
-        "#AnimationSpeed=500\n"
-        "#NotificationTimeout=3000\n"
         "# Click debounce delay in seconds to prevent toast spam\n"
         "#ClickDebounceSeconds=2\n"
-        "\n"
-        "[Relay]\n"
-        "# USB relay control settings\n"
-        "#VendorID=0x16C0\n"
-        "#ProductID=0x05DF\n"
-        "#Channel=1\n"
         "\n"
         "[Advanced]\n"
         "# Advanced settings - modify with caution\n"
@@ -499,14 +561,9 @@ void LoadConfiguration() {
     strcpy_s(g_config.targetModel, sizeof(g_config.targetModel), "WDC WD181KFGX-68AFPN0");
     strcpy_s(g_config.wakeCommand, sizeof(g_config.wakeCommand), "wake-hdd.exe");
     strcpy_s(g_config.sleepCommand, sizeof(g_config.sleepCommand), "sleep-hdd.exe");
-    g_config.vendorID = 0x16C0;
-    g_config.productID = 0x05DF;
-    g_config.relayChannel = 1;
     g_config.periodicCheckMinutes = 10;
     g_config.postOperationCheckSeconds = 3;
     g_config.showNotifications = TRUE;
-    g_config.animationSpeed = 500;
-    g_config.notificationTimeout = 3000;
     g_config.clickDebounceSeconds = 2;
     g_config.startMinimized = TRUE;
     g_config.checkElevation = TRUE;
@@ -533,17 +590,6 @@ void LoadConfiguration() {
     GetPrivateProfileString("Commands", "SleepCommand", g_config.sleepCommand,
                            g_config.sleepCommand, sizeof(g_config.sleepCommand), iniPath);
 
-    // Read hex values for relay settings
-    GetPrivateProfileString("Relay", "VendorID", "", buffer, sizeof(buffer), iniPath);
-    if (strlen(buffer) > 0) {
-        sscanf_s(buffer, "0x%x", &g_config.vendorID);
-    }
-    GetPrivateProfileString("Relay", "ProductID", "", buffer, sizeof(buffer), iniPath);
-    if (strlen(buffer) > 0) {
-        sscanf_s(buffer, "0x%x", &g_config.productID);
-    }
-    g_config.relayChannel = GetPrivateProfileInt("Relay", "Channel", g_config.relayChannel, iniPath);
-
     // Read timing values
     DWORD checkMinutes = GetPrivateProfileInt("Timing", "PeriodicCheckMinutes", g_config.periodicCheckMinutes, iniPath);
     if (checkMinutes >= 1) { // Minimum 1 minute
@@ -554,8 +600,6 @@ void LoadConfiguration() {
 
     // Read UI settings
     g_config.showNotifications = GetPrivateProfileInt("UI", "ShowNotifications", g_config.showNotifications, iniPath);
-    g_config.animationSpeed = GetPrivateProfileInt("UI", "AnimationSpeed", g_config.animationSpeed, iniPath);
-    g_config.notificationTimeout = GetPrivateProfileInt("UI", "NotificationTimeout", g_config.notificationTimeout, iniPath);
     g_config.clickDebounceSeconds = GetPrivateProfileInt("UI", "ClickDebounceSeconds", g_config.clickDebounceSeconds, iniPath);
 
     // Read advanced settings
@@ -768,7 +812,7 @@ void ShowBalloonTip(const char* title, const char* text, DWORD icon) {
     g_nid.dwInfoFlags = icon;  // Use reliable system icons (NIIF_INFO, NIIF_WARNING, etc.)
     strcpy_s(g_nid.szInfoTitle, sizeof(g_nid.szInfoTitle), "");
     strcpy_s(g_nid.szInfo, sizeof(g_nid.szInfo), text);
-    g_nid.uTimeout = 3000;
+    g_nid.uTimeout = 3000;  // 3 seconds (ignored by modern Windows)
 
     Shell_NotifyIcon(NIM_MODIFY, &g_nid);
 
@@ -779,7 +823,7 @@ void ShowBalloonTip(const char* title, const char* text, DWORD icon) {
 // Animation functions for progress feedback
 void StartProgressAnimation() {
     g_animationFrame = 0;
-    g_animationTimer = SetTimer(g_hWnd, IDT_ANIMATION_TIMER, g_config.animationSpeed, NULL);
+    g_animationTimer = SetTimer(g_hWnd, IDT_ANIMATION_TIMER, 500, NULL);  // 500ms animation speed
 }
 
 void StopProgressAnimation() {
