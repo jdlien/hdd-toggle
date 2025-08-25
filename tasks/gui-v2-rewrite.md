@@ -156,7 +156,7 @@ container.Values().Insert(L"Drive1_Name", box_value(friendlyName));
 
 ### Core Design Principles
 1. **Separation of Concerns**: Decouple UI, business logic, and hardware control
-2. **Async-First**: All I/O operations should be asynchronous
+2. ~~**Async-First**: All I/O operations should be asynchronous~~ ✅ **Already Implemented**
 3. **Configuration-Driven**: JSON/XML configuration for all settings
 4. **Plugin Architecture**: Extensible power control methods
 5. **Modern C++**: Use C++20 features, smart pointers, RAII
@@ -418,9 +418,11 @@ The proposed v2 rewrite addresses all identified shortcomings while introducing 
 Key benefits of the rewrite:
 - **Modern**: Native Windows 11 experience with theme support
 - **Flexible**: Support for multiple drives and control methods
-- **Robust**: Better error handling and async operations
+- ~~**Robust**: Better error handling and async operations~~ ✅ **Async Already Implemented**
 - **Secure**: Privilege separation and secure configuration
 - **Extensible**: Plugin architecture for custom power control
 - **User-Friendly**: Intuitive configuration without code changes
+
+**Note**: Async operations have been successfully implemented in the current version, eliminating UI blocking during drive operations.
 
 This rewrite positions HDD Control as a professional-grade tool suitable for both personal and enterprise use cases.
