@@ -431,7 +431,7 @@ int ExecuteCommand(const char* command, BOOL hide_window) {
 void ShowBalloonTip(const char* title, const char* text, DWORD icon) {
     g_nid.uFlags = NIF_INFO | NIF_ICON;
     g_nid.dwInfoFlags = icon;  // Use the passed icon type (NIIF_INFO, NIIF_WARNING, etc.)
-    strcpy_s(g_nid.szInfoTitle, sizeof(g_nid.szInfoTitle), "HDD Control");  // Use title for better visibility
+    strcpy_s(g_nid.szInfoTitle, sizeof(g_nid.szInfoTitle), "");  // Remove redundant "HDD Control" title
     strcpy_s(g_nid.szInfo, sizeof(g_nid.szInfo), text);
     g_nid.uTimeout = 3000;
     
