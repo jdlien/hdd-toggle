@@ -29,7 +29,10 @@
 #define IDM_SLEEP_DRIVE 1002
 #define IDM_REFRESH_STATUS 1003
 #define IDM_EXIT 1004
+#define IDM_WAKE_COMPLETE 1005
+#define IDM_SLEEP_COMPLETE 1006
 #define IDT_STATUS_TIMER 2001
+#define IDT_ANIMATION_TIMER 2002
 #define TRAY_ICON_ID 1
 #define IDI_MAIN_ICON 100
 #define IDI_DRIVE_ON_ICON 101
@@ -43,6 +46,12 @@ typedef enum {
     DS_TRANSITIONING = 3
 } DriveState;
 
+// Async operation data structure
+struct AsyncOperationData {
+    HWND hwnd;
+    BOOL isWake;  // TRUE for wake, FALSE for sleep
+};
+
 // Function declarations
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 BOOL CreateTrayIcon(HWND hwnd);
@@ -53,6 +62,9 @@ HICON LoadIconForDriveState(DriveState state);
 DriveState DetectDriveState();
 int ExecuteCommand(const char* command, BOOL hide_window);
 void ShowBalloonTip(const char* title, const char* text, DWORD icon);
+void StartProgressAnimation();
+void StopProgressAnimation();
+DWORD WINAPI AsyncDriveOperation(LPVOID lpParam);
 void OnWakeDrive();
 void OnSleepDrive();
 void OnRefreshStatus();
@@ -66,6 +78,8 @@ HMENU g_hMenu;
 DriveState g_driveState = DS_UNKNOWN;
 BOOL g_isTransitioning = FALSE;
 UINT WM_TASKBARCREATED = 0;  // Will be set by RegisterWindowMessage
+UINT_PTR g_animationTimer = 0;
+int g_animationFrame = 0;
 
 // Window procedure
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -103,6 +117,24 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 case IDM_EXIT:
                     PostQuitMessage(0);
                     break;
+                case IDM_WAKE_COMPLETE:
+                    StopProgressAnimation();
+                    if (lParam == 0) {
+                        ShowBalloonTip("", "Drive wake completed", NIIF_INFO);
+                    } else {
+                        ShowBalloonTip("", "Drive wake failed", NIIF_WARNING);
+                    }
+                    SetTimer(hwnd, IDT_STATUS_TIMER, 3000, NULL);
+                    break;
+                case IDM_SLEEP_COMPLETE:
+                    StopProgressAnimation();
+                    if (lParam == 0) {
+                        ShowBalloonTip("", "Drive sleep completed", NIIF_INFO);
+                    } else {
+                        ShowBalloonTip("", "Drive sleep failed", NIIF_WARNING);
+                    }
+                    SetTimer(hwnd, IDT_STATUS_TIMER, 3000, NULL);
+                    break;
             }
             break;
 
@@ -117,6 +149,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 // Stop the timer after checking - no continuous polling
                 KillTimer(hwnd, IDT_STATUS_TIMER);
                 g_isTransitioning = FALSE;
+            } else if (wParam == IDT_ANIMATION_TIMER) {
+                // Animate tooltip text with dots
+                char tooltip[128];
+                const char* dots[] = {"", ".", "..", "..."};
+                g_animationFrame = (g_animationFrame + 1) % 4;
+                
+                sprintf_s(tooltip, sizeof(tooltip), "HDD Control - Working%s", 
+                          dots[g_animationFrame]);
+                
+                strcpy_s(g_nid.szTip, sizeof(g_nid.szTip), tooltip);
+                g_nid.uFlags = NIF_TIP;
+                Shell_NotifyIcon(NIM_MODIFY, &g_nid);
             }
             break;
 
@@ -505,6 +549,38 @@ void ShowBalloonTip(const char* title, const char* text, DWORD icon) {
     g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;  // Remove NIF_GUID for now
 }
 
+// Animation functions for progress feedback
+void StartProgressAnimation() {
+    g_animationFrame = 0;
+    g_animationTimer = SetTimer(g_hWnd, IDT_ANIMATION_TIMER, 500, NULL);
+}
+
+void StopProgressAnimation() {
+    if (g_animationTimer) {
+        KillTimer(g_hWnd, IDT_ANIMATION_TIMER);
+        g_animationTimer = 0;
+    }
+    UpdateTrayIcon();  // Restore normal icon
+}
+
+// Async drive operation thread function
+DWORD WINAPI AsyncDriveOperation(LPVOID lpParam) {
+    AsyncOperationData* data = (AsyncOperationData*)lpParam;
+    
+    const char* exe = data->isWake ? "wake-hdd.exe" : "sleep-hdd.exe";
+    
+    // Execute the command
+    int result = ExecuteCommand(exe, TRUE);
+    
+    // Post message back to main thread for UI updates
+    PostMessage(data->hwnd, WM_COMMAND, 
+                data->isWake ? IDM_WAKE_COMPLETE : IDM_SLEEP_COMPLETE, 
+                (LPARAM)result);
+    
+    delete data;
+    return 0;
+}
+
 // Wake drive action
 void OnWakeDrive() {
     if (g_isTransitioning) return;
@@ -513,17 +589,11 @@ void OnWakeDrive() {
     g_driveState = DS_TRANSITIONING;
     UpdateTrayIcon();
     ShowBalloonTip("", "Waking drive...", NIIF_INFO);
+    StartProgressAnimation();
     
-    int result = ExecuteCommand("wake-hdd.exe", TRUE);
-    
-    if (result == 0) {
-        ShowBalloonTip("", "Drive wake completed", NIIF_INFO);
-    } else {
-        ShowBalloonTip("", "Drive wake failed", NIIF_WARNING);
-    }
-    
-    // Set a one-time timer to check status after wake operation
-    SetTimer(g_hWnd, IDT_STATUS_TIMER, 3000, NULL);
+    // Create thread for async operation
+    AsyncOperationData* data = new AsyncOperationData{g_hWnd, TRUE};
+    CreateThread(NULL, 0, AsyncDriveOperation, data, 0, NULL);
 }
 
 // Sleep drive action
@@ -534,17 +604,11 @@ void OnSleepDrive() {
     g_driveState = DS_TRANSITIONING;
     UpdateTrayIcon();
     ShowBalloonTip("", "Sleeping drive...", NIIF_INFO);
+    StartProgressAnimation();
     
-    int result = ExecuteCommand("sleep-hdd.exe", TRUE);
-    
-    if (result == 0) {
-        ShowBalloonTip("", "Drive sleep completed", NIIF_INFO);
-    } else {
-        ShowBalloonTip("", "Drive sleep failed", NIIF_WARNING);
-    }
-    
-    // Set a one-time timer to check status after sleep operation
-    SetTimer(g_hWnd, IDT_STATUS_TIMER, 3000, NULL);
+    // Create thread for async operation
+    AsyncOperationData* data = new AsyncOperationData{g_hWnd, FALSE};
+    CreateThread(NULL, 0, AsyncDriveOperation, data, 0, NULL);
 }
 
 // Refresh status action
