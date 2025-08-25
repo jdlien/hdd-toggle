@@ -6,6 +6,8 @@ Programming Rules:
 - Minimize dependencies as much as possible
 - Use best practices for handling hard drive control
 
+- If you need to run .bat files, like for compiling, you can run them via pwsh or powershell
+
 - Our current focus is making a Windows 11 system tray icon app using C++ to control the hard drive power (essentially by running sleep-hdd.exe and wake-hdd.exe), but there are many challenges to doing this well. We use `compile-gui.bat` to actually perform the compilation of this program.
 
 - We use relay.c (compiled with compile.bat) to physically control the relays that turn HDD power on or off

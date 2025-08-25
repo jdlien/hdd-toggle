@@ -2,13 +2,18 @@
 
 // Define proper icon constants
 #define IDI_MAIN_ICON 100
+#define IDI_DRIVE_ON_ICON 101
+#define IDI_DRIVE_OFF_ICON 102
 
-// Main application icon - use consistent ID
+// Main application icon - use consistent ID (unknown state)
 IDI_MAIN_ICON ICON "hdd-icon.ico"
+
+// Drive state icons
+IDI_DRIVE_ON_ICON ICON "hdd-icon-on.ico"
+IDI_DRIVE_OFF_ICON ICON "hdd-icon-off.ico"
 
 // Legacy compatibility (keep for old references)
 1 ICON "hdd-icon.ico"
-101 ICON "hdd-icon.ico"
 
 // Manifest for Windows 10/11 compatibility
 1 RT_MANIFEST "hdd-control.manifest"

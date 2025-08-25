@@ -32,6 +32,8 @@
 #define IDT_STATUS_TIMER 2001
 #define TRAY_ICON_ID 1
 #define IDI_MAIN_ICON 100
+#define IDI_DRIVE_ON_ICON 101
+#define IDI_DRIVE_OFF_ICON 102
 
 // Drive states - must be defined before use
 typedef enum {
@@ -47,6 +49,7 @@ BOOL CreateTrayIcon(HWND hwnd);
 void RemoveTrayIcon();
 void ShowContextMenu(HWND hwnd);
 void UpdateTrayIcon();
+HICON LoadIconForDriveState(DriveState state);
 DriveState DetectDriveState();
 int ExecuteCommand(const char* command, BOOL hide_window);
 void ShowBalloonTip(const char* title, const char* text, DWORD icon);
@@ -209,6 +212,10 @@ BOOL CreateTrayIcon(HWND hwnd) {
 // Remove tray icon
 void RemoveTrayIcon() {
     Shell_NotifyIcon(NIM_DELETE, &g_nid);
+    if (g_nid.hIcon) {
+        DestroyIcon(g_nid.hIcon);
+        g_nid.hIcon = NULL;
+    }
 }
 
 // Show context menu
@@ -261,9 +268,47 @@ void UpdateTrayIcon() {
             break;
     }
     
+    // Load the appropriate icon for the current state
+    HICON newIcon = LoadIconForDriveState(g_driveState);
+    if (newIcon) {
+        if (g_nid.hIcon) {
+            DestroyIcon(g_nid.hIcon);
+        }
+        g_nid.hIcon = newIcon;
+    }
+    
     // Keep the icon flag to preserve the icon when updating
     g_nid.uFlags = NIF_TIP | NIF_ICON;  // Remove NIF_GUID for now
     Shell_NotifyIcon(NIM_MODIFY, &g_nid);
+}
+
+// Load the appropriate icon based on drive state
+HICON LoadIconForDriveState(DriveState state) {
+    int iconResource;
+    
+    switch (state) {
+        case DS_ONLINE:
+            iconResource = IDI_DRIVE_ON_ICON;
+            break;
+        case DS_OFFLINE:
+            iconResource = IDI_DRIVE_OFF_ICON;
+            break;
+        case DS_TRANSITIONING:
+        case DS_UNKNOWN:
+        default:
+            iconResource = IDI_MAIN_ICON;
+            break;
+    }
+    
+    // Load icon with proper size for system tray
+    int cx = GetSystemMetrics(SM_CXSMICON);
+    int cy = GetSystemMetrics(SM_CYSMICON);
+    
+    return (HICON)LoadImage(g_hInst, 
+                           MAKEINTRESOURCE(iconResource),
+                           IMAGE_ICON, 
+                           cx, cy, 
+                           LR_DEFAULTCOLOR);
 }
 
 // WMI-based disk detection using COM - completely silent, no windows!
@@ -413,7 +458,7 @@ DriveState DetectDriveState() {
     if (pLoc) pLoc->Release();
     CoUninitialize();
     
-    return foundTarget ? state : DS_UNKNOWN;
+    return foundTarget ? state : DS_OFFLINE;
 }
 
 // Execute command and return exit code
