@@ -56,6 +56,7 @@ void ShowBalloonTip(const char* title, const char* text, DWORD icon);
 void OnWakeDrive();
 void OnSleepDrive();
 void OnRefreshStatus();
+BOOL IsRunningElevated();
 
 // Global variables
 HINSTANCE g_hInst;
@@ -247,7 +248,8 @@ void ShowContextMenu(HWND hwnd) {
     }
 
     SetForegroundWindow(hwnd);
-    TrackPopupMenu(g_hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
+    // Use proper menu positioning that stays within screen bounds
+    TrackPopupMenu(g_hMenu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_RIGHTALIGN, pt.x, pt.y, 0, hwnd, NULL);
     PostMessage(hwnd, WM_NULL, 0, 0);
 }
 
@@ -552,10 +554,32 @@ void OnRefreshStatus() {
     ShowBalloonTip("", "Status refreshed", NIIF_INFO);
 }
 
+// Check if the current process is running with elevated privileges
+BOOL IsRunningElevated() {
+    BOOL isElevated = FALSE;
+    HANDLE hToken = NULL;
+    
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+        TOKEN_ELEVATION elevation;
+        DWORD size;
+        
+        if (GetTokenInformation(hToken, TokenElevation, &elevation, sizeof(elevation), &size)) {
+            isElevated = elevation.TokenIsElevated;
+        }
+        CloseHandle(hToken);
+    }
+    
+    return isElevated;
+}
+
+
 // Main entry point
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    // Initialize DPI awareness for modern scaling
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    
     // Create mutex to ensure single instance
-    HANDLE hMutex = CreateMutex(NULL, TRUE, "Global\\HDDControlGUI_v2_SingleInstance");
+    HANDLE hMutex = CreateMutex(NULL, TRUE, "Global\\HDDControl_SingleInstance");
     
     if (hMutex == NULL || GetLastError() == ERROR_ALREADY_EXISTS) {
         // Another instance is already running

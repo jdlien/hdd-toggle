@@ -36,7 +36,7 @@ BEGIN
             VALUE "FileDescription", "HDD Control"
             VALUE "FileVersion", "1.0.2.0"
             VALUE "InternalName", "HDD Control"
-            VALUE "OriginalFilename", "hdd-control-gui-v2.exe"
+            VALUE "OriginalFilename", "hdd-control.exe"
             VALUE "ProductName", "HDD Control"
             VALUE "ProductVersion", "1.0.2.0"
         END

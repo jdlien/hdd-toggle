@@ -19,14 +19,14 @@ if %errorlevel% neq 0 (
 )
 
 echo Compiling GUI application...
-cl.exe /nologo /O2 /MT /EHsc hdd-control-gui.cpp /Fe:hdd-control-gui-v2.exe hdd-icon.res shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib /link /SUBSYSTEM:WINDOWS
+cl.exe /nologo /O2 /MT /EHsc hdd-control-gui.cpp /Fe:hdd-control.exe hdd-icon.res shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib /link /SUBSYSTEM:WINDOWS
 
 if exist hdd-control-gui.obj del hdd-control-gui.obj >nul 2>nul
 if exist hdd-icon.res del hdd-icon.res >nul 2>nul
 
 if %errorlevel% equ 0 (
-    echo SUCCESS! Built hdd-control-gui-v2.exe with icon
-    if exist hdd-control-gui-v2.exe for %%f in (hdd-control-gui-v2.exe) do echo   hdd-control-gui-v2.exe - %%~zf bytes
+    echo SUCCESS! Built hdd-control.exe with icon
+    if exist hdd-control.exe for %%f in (hdd-control.exe) do echo   hdd-control.exe - %%~zf bytes
 ) else (
     echo Build failed with error code %errorlevel%
 )
