@@ -47,10 +47,31 @@ if "%BUILD_TYPE%"=="dynamic" (
 )
 if exist sleep-hdd.obj del sleep-hdd.obj >nul 2>nul
 
+REM Build hdd-control-gui.exe
+echo.
+echo Building HDD Control GUI...
+REM Compile resource file if icon exists
+if exist hdd-icon.ico (
+    rc.exe /nologo /fo hdd-icon.res hdd-icon.rc >nul 2>nul
+    if "%BUILD_TYPE%"=="dynamic" (
+        cl.exe /nologo /O1 /Os /MD hdd-control-gui.c /Fe:hdd-control-gui.exe hdd-icon.res shell32.lib advapi32.lib user32.lib comctl32.lib /link /OPT:REF /OPT:ICF /SUBSYSTEM:WINDOWS
+    ) else (
+        cl.exe /nologo /O2 /MT hdd-control-gui.c /Fe:hdd-control-gui.exe hdd-icon.res shell32.lib advapi32.lib user32.lib comctl32.lib /link /SUBSYSTEM:WINDOWS
+    )
+    if exist hdd-icon.res del hdd-icon.res >nul 2>nul
+) else (
+    if "%BUILD_TYPE%"=="dynamic" (
+        cl.exe /nologo /O1 /Os /MD hdd-control-gui.c /Fe:hdd-control-gui.exe shell32.lib advapi32.lib user32.lib comctl32.lib /link /OPT:REF /OPT:ICF /SUBSYSTEM:WINDOWS
+    ) else (
+        cl.exe /nologo /O2 /MT hdd-control-gui.c /Fe:hdd-control-gui.exe shell32.lib advapi32.lib user32.lib comctl32.lib /link /SUBSYSTEM:WINDOWS
+    )
+)
+if exist hdd-control-gui.obj del hdd-control-gui.obj >nul 2>nul
+
 if %errorlevel% equ 0 (
     echo.
     echo SUCCESS! Built utilities:
-    for %%f in (%OUTPUT_NAME% wake-hdd.exe sleep-hdd.exe) do if exist %%f echo   %%f - %%~zf bytes
+    for %%f in (%OUTPUT_NAME% wake-hdd.exe sleep-hdd.exe hdd-control-gui.exe) do if exist %%f echo   %%f - %%~zf bytes
     if "%BUILD_TYPE%"=="dynamic" (
         echo.
         echo NOTE: wake-hdd.exe/sleep-hdd.exe/relay-small.exe require Visual C++ Redistributable 2015-2022
@@ -65,5 +86,5 @@ if %errorlevel% equ 0 (
 
 echo.
 echo Usage:
-echo   compile.bat         - Creates relay.exe, wake-hdd.exe, and sleep-hdd.exe (standalone)
-echo   compile.bat small   - Creates relay-small.exe, wake-hdd.exe, and sleep-hdd.exe (needs VC++ redist)
+echo   compile.bat         - Creates relay.exe, wake-hdd.exe, sleep-hdd.exe, hdd-control-gui.exe (standalone)
+echo   compile.bat small   - Creates relay-small.exe, wake-hdd.exe, sleep-hdd.exe, hdd-control-gui.exe (needs VC++ redist)
