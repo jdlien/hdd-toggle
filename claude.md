@@ -151,15 +151,13 @@ PostOperationCheckSeconds=3
 
 ## Releases
 
-When creating GitHub releases, the zip file **must** be named `hdd-toggle-windows.zip` (no version number). This allows the README's download link to always point to the latest release:
+When creating GitHub releases, use stable filenames (no version numbers) so the README download links always work:
 
-```
-https://github.com/jdlien/hdd-toggle/releases/latest/download/hdd-toggle-windows.zip
-```
+- `hdd-toggle-windows-x64.zip` - x64 build
+- `hdd-toggle-windows-arm64.zip` - ARM64 build
 
-The zip should contain:
-- `hdd-toggle.exe` - x64 build
-- `hdd-toggle-arm64.exe` - ARM64 build
+Each zip should contain:
+- `hdd-toggle.exe` - the architecture-specific build
 - `install.bat` / `uninstall.bat`
 - `hdd-control.ini`
 - `README.md` / `CHANGELOG.md`

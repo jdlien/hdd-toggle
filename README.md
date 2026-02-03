@@ -9,7 +9,7 @@ A Windows system tray application for controlling mechanical hard drive power vi
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-**[⬇️ Download Latest Release](https://github.com/jdlien/hdd-toggle/releases/latest/download/hdd-toggle-windows.zip)**
+**Download:** [x64](https://github.com/jdlien/hdd-toggle/releases/latest/download/hdd-toggle-windows-x64.zip) | [ARM64](https://github.com/jdlien/hdd-toggle/releases/latest/download/hdd-toggle-windows-arm64.zip)
 
 ## Overview
 
