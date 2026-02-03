@@ -366,8 +366,20 @@ BOOL CreateTrayIcon(HWND hwnd) {
 
     strcpy_s(g_nid.szTip, sizeof(g_nid.szTip), "HDD Control - Checking status...");
 
-    // Add the tray icon
-    return Shell_NotifyIcon(NIM_ADD, &g_nid);
+    // Add the tray icon with retry logic for startup timing
+    // Explorer's notification area may not be ready immediately at logon
+    const int MAX_RETRIES = 10;
+    const int RETRY_DELAY_MS = 1000;
+
+    for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        if (Shell_NotifyIcon(NIM_ADD, &g_nid)) {
+            return TRUE;
+        }
+        // Wait before retrying - Explorer may still be initializing
+        Sleep(RETRY_DELAY_MS);
+    }
+
+    return FALSE;
 }
 
 // Remove tray icon
