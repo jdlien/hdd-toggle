@@ -19,7 +19,7 @@ if %errorlevel% neq 0 (
 )
 
 echo Compiling GUI application...
-cl.exe /nologo /O2 /MT /EHsc hdd-control-gui.cpp /Fe:hdd-control.exe hdd-icon.res shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib /link /SUBSYSTEM:WINDOWS
+cl.exe /nologo /O2 /MT /EHsc /std:c++17 hdd-control-gui.cpp /Fe:hdd-control.exe hdd-icon.res shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib dwmapi.lib /link /SUBSYSTEM:WINDOWS
 
 if exist hdd-control-gui.obj del hdd-control-gui.obj >nul 2>nul
 if exist hdd-icon.res del hdd-icon.res >nul 2>nul

@@ -14,6 +14,10 @@
 #include <shlwapi.h>
 #include <dwmapi.h>
 #include <thread>
+#include <string>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 // Simple COM smart pointer template (like ComPtr but without WRL dependency)
 template<typename T>
@@ -115,6 +119,13 @@ void ApplyDarkModeToWindow(HWND hwnd) {
     // Also set the DWMWA_USE_IMMERSIVE_DARK_MODE attribute for title bar (if visible)
     BOOL useDarkMode = TRUE;
     DwmSetWindowAttribute(hwnd, 20, &useDarkMode, sizeof(useDarkMode));  // DWMWA_USE_IMMERSIVE_DARK_MODE
+}
+
+// Get the directory containing the executable
+fs::path GetExeDirectory() {
+    char exePath[MAX_PATH];
+    GetModuleFileName(NULL, exePath, MAX_PATH);
+    return fs::path(exePath).parent_path();
 }
 
 // Drive states - must be defined before use
@@ -338,15 +349,9 @@ BOOL CreateTrayIcon(HWND hwnd) {
 
     // Method 3: Try loading from external file as last resort
     if (!g_nid.hIcon) {
-        char iconPath[MAX_PATH];
-        char exeDir[MAX_PATH];
-        GetModuleFileName(NULL, exeDir, MAX_PATH);
-        char* lastSlash = strrchr(exeDir, '\\');
-        if (lastSlash) *lastSlash = '\0';
-        sprintf_s(iconPath, MAX_PATH, "%s\\hdd-icon.ico", exeDir);
-
+        fs::path iconPath = GetExeDirectory() / "hdd-icon.ico";
         g_nid.hIcon = (HICON)LoadImage(NULL,
-                                       iconPath,
+                                       iconPath.string().c_str(),
                                        IMAGE_ICON,
                                        cx, cy,
                                        LR_LOADFROMFILE | LR_DEFAULTCOLOR);
@@ -494,22 +499,16 @@ HICON LoadIconForDriveState(DriveState state) {
 
 // Create default INI file with example settings
 void CreateDefaultIniFile() {
-    char iniPath[MAX_PATH];
-    char exeDir[MAX_PATH];
-
-    GetModuleFileName(NULL, exeDir, MAX_PATH);
-    char* lastSlash = strrchr(exeDir, '\\');
-    if (lastSlash) *lastSlash = '\0';
-    sprintf_s(iniPath, MAX_PATH, "%s\\hdd-control.ini", exeDir);
+    fs::path iniPath = GetExeDirectory() / "hdd-control.ini";
 
     // Check if INI already exists
-    if (PathFileExists(iniPath)) {
+    if (fs::exists(iniPath)) {
         return; // Don't overwrite existing file
     }
 
     // Use FILE* approach for better compatibility
     FILE* file = NULL;
-    if (fopen_s(&file, iniPath, "w") != 0 || file == NULL) {
+    if (fopen_s(&file, iniPath.string().c_str(), "w") != 0 || file == NULL) {
         return; // Couldn't create file - fail silently
     }
 
@@ -549,14 +548,9 @@ void CreateDefaultIniFile() {
 
 // Load configuration from INI file with defaults
 void LoadConfiguration() {
-    char iniPath[MAX_PATH];
-    char exeDir[MAX_PATH];
-    char buffer[256];
-
-    GetModuleFileName(NULL, exeDir, MAX_PATH);
-    char* lastSlash = strrchr(exeDir, '\\');
-    if (lastSlash) *lastSlash = '\0';
-    sprintf_s(iniPath, MAX_PATH, "%s\\hdd-control.ini", exeDir);
+    fs::path iniPath = GetExeDirectory() / "hdd-control.ini";
+    std::string iniPathStr = iniPath.string();
+    const char* iniPathC = iniPathStr.c_str();
 
     // Set defaults first
     strcpy_s(g_config.targetSerial, sizeof(g_config.targetSerial), "2VH7TM9L");
@@ -575,37 +569,36 @@ void LoadConfiguration() {
     g_config.debugMode = FALSE;
 
     // Always try to create default INI if it doesn't exist
-    BOOL iniExists = PathFileExists(iniPath);
-    if (!iniExists) {
+    if (!fs::exists(iniPath)) {
         CreateDefaultIniFile();
         return; // Use defaults after creation attempt
     }
 
     // Read values from INI file
     GetPrivateProfileString("Drive", "SerialNumber", g_config.targetSerial,
-                           g_config.targetSerial, sizeof(g_config.targetSerial), iniPath);
+                           g_config.targetSerial, sizeof(g_config.targetSerial), iniPathC);
     GetPrivateProfileString("Drive", "Model", g_config.targetModel,
-                           g_config.targetModel, sizeof(g_config.targetModel), iniPath);
+                           g_config.targetModel, sizeof(g_config.targetModel), iniPathC);
 
     GetPrivateProfileString("Commands", "WakeCommand", g_config.wakeCommand,
-                           g_config.wakeCommand, sizeof(g_config.wakeCommand), iniPath);
+                           g_config.wakeCommand, sizeof(g_config.wakeCommand), iniPathC);
     GetPrivateProfileString("Commands", "SleepCommand", g_config.sleepCommand,
-                           g_config.sleepCommand, sizeof(g_config.sleepCommand), iniPath);
+                           g_config.sleepCommand, sizeof(g_config.sleepCommand), iniPathC);
 
     // Read timing values
-    DWORD checkMinutes = GetPrivateProfileInt("Timing", "PeriodicCheckMinutes", g_config.periodicCheckMinutes, iniPath);
+    DWORD checkMinutes = GetPrivateProfileInt("Timing", "PeriodicCheckMinutes", g_config.periodicCheckMinutes, iniPathC);
     if (checkMinutes >= 1) { // Minimum 1 minute
         g_config.periodicCheckMinutes = checkMinutes;
     }
     g_config.postOperationCheckSeconds = GetPrivateProfileInt("Timing", "PostOperationCheckSeconds",
-                                                             g_config.postOperationCheckSeconds, iniPath);
+                                                             g_config.postOperationCheckSeconds, iniPathC);
 
     // Read UI settings
-    g_config.showNotifications = GetPrivateProfileInt("UI", "ShowNotifications", g_config.showNotifications, iniPath);
-    g_config.clickDebounceSeconds = GetPrivateProfileInt("UI", "ClickDebounceSeconds", g_config.clickDebounceSeconds, iniPath);
+    g_config.showNotifications = GetPrivateProfileInt("UI", "ShowNotifications", g_config.showNotifications, iniPathC);
+    g_config.clickDebounceSeconds = GetPrivateProfileInt("UI", "ClickDebounceSeconds", g_config.clickDebounceSeconds, iniPathC);
 
     // Read advanced settings
-    g_config.debugMode = GetPrivateProfileInt("Advanced", "DebugMode", g_config.debugMode, iniPath);
+    g_config.debugMode = GetPrivateProfileInt("Advanced", "DebugMode", g_config.debugMode, iniPathC);
 }
 
 // Async periodic drive check function
