@@ -9,6 +9,11 @@ All notable changes to HDD Toggle will be documented in this file.
 - Build script now accepts architecture parameter: `compile-gui.bat [x64|arm64]`
 - CI builds both x64 and ARM64 binaries
 
+### Fixed
+- **Startup task naming**: Renamed scheduled task from "HDD Control Startup" to "HDD Toggle Startup" for consistency with project rename
+- Updated `check-startup.bat` and `remove-startup.bat` to use new task name
+- `remove-startup.bat` now removes both old and new task names for backward compatibility
+
 ## [3.0.0] - 2026-02-03
 
 ### Breaking Changes
