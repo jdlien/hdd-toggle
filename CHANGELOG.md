@@ -10,6 +10,8 @@ All notable changes to HDD Control will be documented in this file.
 - **WinRT toast notifications** - Modern Windows 11-style notifications instead of legacy balloons
 - **Unit test framework** - Added Catch2 tests for utility functions
 - **Comprehensive documentation** - New CLAUDE.md with build instructions and architecture details
+- **Install/uninstall scripts** - Simple batch scripts for installation to %LOCALAPPDATA%\HDD-Toggle with Start Menu shortcut and optional elevated startup
+- **Example config file** - hdd-control.ini.example with documented settings
 
 ### Changed
 - **Project restructured** for maintainability:
