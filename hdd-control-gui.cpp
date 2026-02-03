@@ -188,16 +188,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case WM_TRAYICON:
             switch (LOWORD(lParam)) {
                 case WM_LBUTTONUP:
-                    {
-                        // Left-click: refresh status with configurable debouncing
-                        ULONGLONG now = GetTickCount64();
-                        ULONGLONG debounceMs = g_config.clickDebounceSeconds * 1000;
-                        if (now - g_lastClickTime >= debounceMs) {
-                            g_lastClickTime = now;
-                            OnRefreshStatus();
-                        }
-                        // Ignore rapid clicks to prevent toast spam
-                    }
+                    // Left-click: show context menu (same as right-click)
+                    ShowContextMenu(hwnd);
                     break;
                 case WM_RBUTTONUP:
                 case WM_CONTEXTMENU:

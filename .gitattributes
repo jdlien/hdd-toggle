@@ -2,9 +2,10 @@
 *.bat text eol=crlf
 *.ps1 text eol=crlf
 
-# C source files can use LF (standard for most C projects)
-*.c text eol=lf
-*.h text eol=lf
+# C/C++ source files - use CRLF since this is a Windows-only project
+*.c text eol=crlf
+*.cpp text eol=crlf
+*.h text eol=crlf
 
 # Markdown files use LF (standard)
 *.md text eol=lf
