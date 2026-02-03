@@ -259,10 +259,10 @@ inline std::string GetExtension(const std::string& path) {
     size_t slashPos = path.rfind('/');
     size_t backslashPos = path.rfind('\\');
 
-    // Find last path separator
+    // Find last path separator (use parens to avoid Windows max macro)
     size_t lastSep = std::string::npos;
     if (slashPos != std::string::npos && backslashPos != std::string::npos) {
-        lastSep = std::max(slashPos, backslashPos);
+        lastSep = (std::max)(slashPos, backslashPos);
     } else if (slashPos != std::string::npos) {
         lastSep = slashPos;
     } else if (backslashPos != std::string::npos) {
@@ -283,7 +283,7 @@ inline std::string GetFilename(const std::string& path) {
 
     size_t lastSep = std::string::npos;
     if (slashPos != std::string::npos && backslashPos != std::string::npos) {
-        lastSep = std::max(slashPos, backslashPos);
+        lastSep = (std::max)(slashPos, backslashPos);
     } else if (slashPos != std::string::npos) {
         lastSep = slashPos;
     } else if (backslashPos != std::string::npos) {

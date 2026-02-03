@@ -17,12 +17,12 @@ set "SOURCE_DIR=%SOURCE_DIR:~0,-1%"
 set "INSTALL_DIR=%LOCALAPPDATA%\HDD-Toggle"
 
 :: Check if we're running from source (has bin folder) or from a release package
-if exist "%SOURCE_DIR%\bin\hdd-control.exe" (
+if exist "%SOURCE_DIR%\bin\hdd-toggle.exe" (
     set "BIN_SOURCE=%SOURCE_DIR%\bin"
-) else if exist "%SOURCE_DIR%\hdd-control.exe" (
+) else if exist "%SOURCE_DIR%\hdd-toggle.exe" (
     set "BIN_SOURCE=%SOURCE_DIR%"
 ) else (
-    echo ERROR: Cannot find hdd-control.exe
+    echo ERROR: Cannot find hdd-toggle.exe
     echo Run this script from the project root or a release package.
     pause
     exit /b 1
@@ -32,15 +32,9 @@ echo Source: %BIN_SOURCE%
 echo Install to: %INSTALL_DIR%
 echo.
 
-:: Check for required executables
-set "MISSING="
-if not exist "%BIN_SOURCE%\hdd-control.exe" set "MISSING=!MISSING! hdd-control.exe"
-if not exist "%BIN_SOURCE%\relay.exe" set "MISSING=!MISSING! relay.exe"
-if not exist "%BIN_SOURCE%\wake-hdd.exe" set "MISSING=!MISSING! wake-hdd.exe"
-if not exist "%BIN_SOURCE%\sleep-hdd.exe" set "MISSING=!MISSING! sleep-hdd.exe"
-
-if defined MISSING (
-    echo ERROR: Missing required files:%MISSING%
+:: Check for required executable (unified binary now)
+if not exist "%BIN_SOURCE%\hdd-toggle.exe" (
+    echo ERROR: Missing hdd-toggle.exe
     echo Please build the project first: scripts\build\compile-gui.bat
     pause
     exit /b 1
@@ -56,7 +50,7 @@ if %errorlevel% neq 0 (
 )
 
 echo This will:
-echo  1. Copy files to %INSTALL_DIR%
+echo  1. Copy hdd-toggle.exe to %INSTALL_DIR%
 echo  2. Create a Start Menu shortcut (required for notifications)
 echo  3. Optionally add to startup (runs elevated without UAC prompts)
 echo.
@@ -75,12 +69,9 @@ if not exist "%INSTALL_DIR%" (
     )
 )
 
-:: Copy executables
-echo Copying executables...
-copy /y "%BIN_SOURCE%\hdd-control.exe" "%INSTALL_DIR%\" >nul
-copy /y "%BIN_SOURCE%\relay.exe" "%INSTALL_DIR%\" >nul
-copy /y "%BIN_SOURCE%\wake-hdd.exe" "%INSTALL_DIR%\" >nul
-copy /y "%BIN_SOURCE%\sleep-hdd.exe" "%INSTALL_DIR%\" >nul
+:: Copy executable (single unified binary now)
+echo Copying executable...
+copy /y "%BIN_SOURCE%\hdd-toggle.exe" "%INSTALL_DIR%\" >nul
 
 :: Copy config file (don't overwrite existing user config)
 if not exist "%INSTALL_DIR%\hdd-control.ini" (
@@ -106,13 +97,13 @@ echo.
 :: Create Start Menu shortcut with AUMID (required for toast notifications)
 echo Creating Start Menu shortcut...
 set "SHORTCUT_PATH=%APPDATA%\Microsoft\Windows\Start Menu\Programs\HDD Toggle.lnk"
-set "AUMID=JDLien.HDDToggle"
+set "AUMID=HDDToggle.TrayApp.1"
 
 :: Use PowerShell to create shortcut with AppUserModelId
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$ws = New-Object -ComObject WScript.Shell; ^
     $shortcut = $ws.CreateShortcut('%SHORTCUT_PATH%'); ^
-    $shortcut.TargetPath = '%INSTALL_DIR%\hdd-control.exe'; ^
+    $shortcut.TargetPath = '%INSTALL_DIR%\hdd-toggle.exe'; ^
     $shortcut.WorkingDirectory = '%INSTALL_DIR%'; ^
     $shortcut.Description = 'HDD Toggle - Control mechanical hard drive power'; ^
     if (Test-Path '%INSTALL_DIR%\hdd-icon.ico') { $shortcut.IconLocation = '%INSTALL_DIR%\hdd-icon.ico' }; ^
@@ -137,7 +128,7 @@ choice /c YN /m "Add to startup"
 if %errorlevel% equ 1 (
     echo.
     echo Creating startup task...
-    schtasks /create /tn "HDD Toggle" /tr "\"%INSTALL_DIR%\hdd-control.exe\"" /sc onlogon /rl highest /f >nul 2>&1
+    schtasks /create /tn "HDD Toggle" /tr "\"%INSTALL_DIR%\hdd-toggle.exe\"" /sc onlogon /rl highest /f >nul 2>&1
     if %errorlevel% equ 0 (
         echo Startup task created.
     ) else (
@@ -160,6 +151,13 @@ echo            to set your drive's serial number.
 echo.
 echo Find your drive serial with:
 echo   wmic diskdrive get model,serialnumber
+echo.
+echo CLI Usage:
+echo   hdd-toggle              Launch tray app
+echo   hdd-toggle wake         Wake the drive
+echo   hdd-toggle sleep        Sleep the drive
+echo   hdd-toggle status       Show drive status
+echo   hdd-toggle --help       Show all commands
 echo.
 echo To uninstall, run: uninstall.bat
 echo.

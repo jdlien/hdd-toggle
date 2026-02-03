@@ -22,6 +22,7 @@ Perfect for NAS drives, backup drives, or any HDD you want to power down when no
 - **Automatic status detection** via WMI
 - **Windows 11 dark mode** support
 - **Toast notifications** for operation feedback
+- **Unified CLI** - single binary with subcommands
 - **Configurable** via INI file
 - **Runs at startup** (optional Task Scheduler integration)
 
@@ -44,7 +45,7 @@ Perfect for NAS drives, backup drives, or any HDD you want to power down when no
 4. Launch "HDD Toggle" from the Start Menu
 
 The installer will:
-- Copy files to `%LOCALAPPDATA%\HDD-Toggle`
+- Copy `hdd-toggle.exe` to `%LOCALAPPDATA%\HDD-Toggle`
 - Create a Start Menu shortcut (required for toast notifications)
 - Optionally add to startup (runs elevated without UAC prompts)
 
@@ -52,13 +53,9 @@ To uninstall, run `uninstall.bat`.
 
 **Manual installation:**
 
-1. Place executables in a folder (e.g., `C:\bin\`):
-   - `hdd-control.exe` - Main tray application
-   - `wake-hdd.exe` - Wake utility
-   - `sleep-hdd.exe` - Sleep utility
-   - `relay.exe` - Relay controller
-2. Edit `hdd-control.ini` with your drive's serial number
-3. Run `hdd-control.exe`
+1. Place `hdd-toggle.exe` in a folder (e.g., `C:\bin\`)
+2. Create `hdd-control.ini` with your drive's serial number
+3. Run `hdd-toggle.exe`
 
 ### Configuration
 
@@ -69,10 +66,6 @@ Create `hdd-control.ini` next to the executable:
 # Find your drive's serial with: wmic diskdrive get serialnumber
 SerialNumber=YOUR_SERIAL_HERE
 Model=Your Drive Model
-
-[Commands]
-WakeCommand=wake-hdd.exe
-SleepCommand=sleep-hdd.exe
 
 [Timing]
 PeriodicCheckMinutes=10
@@ -86,6 +79,8 @@ ShowNotifications=true
 
 ### System Tray App
 
+Double-click `hdd-toggle.exe` or run without arguments to launch the tray app.
+
 Right-click (or left-click) the tray icon to:
 - **Wake Drive** - Power on and detect the drive
 - **Sleep Drive** - Safely eject and power off
@@ -94,19 +89,24 @@ Right-click (or left-click) the tray icon to:
 
 The icon changes to indicate drive status (on/off/transitioning).
 
-### Command Line Tools
+### Command Line Interface
 
-```powershell
-# Wake the drive
-.\wake-hdd.exe
+HDD Toggle is a single unified binary with subcommands:
 
-# Sleep the drive
-.\sleep-hdd.exe
-
-# Manual relay control
-.\relay.exe all on    # Power on
-.\relay.exe all off   # Power off
-.\relay.exe 1 on      # Channel 1 only
+```
+hdd-toggle                     # Launch tray app (default)
+hdd-toggle gui                 # Launch tray app (explicit)
+hdd-toggle wake                # Power on the drive
+hdd-toggle sleep               # Safely eject and power off
+hdd-toggle sleep --offline     # Take offline before power down (requires Admin)
+hdd-toggle relay on            # Turn on all relays
+hdd-toggle relay off           # Turn off all relays
+hdd-toggle relay 1 on          # Turn on relay channel 1
+hdd-toggle relay 2 off         # Turn off relay channel 2
+hdd-toggle status              # Show drive status
+hdd-toggle status --json       # Output status as JSON (for scripting)
+hdd-toggle --help              # Show help
+hdd-toggle --version           # Show version
 ```
 
 ### PowerShell Scripts (Alternative)
@@ -154,11 +154,8 @@ When relays are OFF, the drive has no power. When ON, the drive powers up.
 ### Build Commands
 
 ```batch
-# Build the GUI application
+# Build the unified binary
 scripts\build\compile-gui.bat
-
-# Build command-line utilities
-scripts\build\compile.bat
 
 # Build and run tests
 scripts\build\compile-tests.bat
@@ -171,24 +168,35 @@ scripts\build\coverage.bat --open
 
 ```
 hdd-toggle/
-├── src/                    # C/C++ source code
-│   ├── hdd-control-gui.cpp # Main tray application
-│   ├── relay.c             # USB relay controller
-│   ├── wake-hdd.c          # Wake utility
-│   └── sleep-hdd.c         # Sleep utility
-├── include/                # Headers
-│   └── hdd-utils.h         # Shared utilities (100% tested)
-├── res/                    # Windows resources
-├── assets/                 # Icons and images
+├── src/
+│   ├── main.cpp                # Entry point and command router
+│   ├── gui/
+│   │   └── tray-app.cpp        # System tray GUI
+│   ├── commands/
+│   │   ├── relay.cpp           # Relay control command
+│   │   ├── wake.cpp            # Wake command
+│   │   ├── sleep.cpp           # Sleep command
+│   │   └── status.cpp          # Status command
+│   └── core/
+│       ├── process.cpp         # Process execution utilities
+│       └── admin.cpp           # Admin privilege utilities
+├── include/
+│   ├── hdd-toggle.h            # Version and common types
+│   ├── hdd-utils.h             # Shared utilities (100% tested)
+│   ├── commands.h              # Command declarations
+│   └── core/
+│       ├── process.h           # Process execution API
+│       └── admin.h             # Admin check API
+├── res/                        # Windows resources
+├── assets/                     # Icons and images
 ├── scripts/
-│   ├── build/              # Build scripts
-│   ├── hdd/                # PowerShell control scripts
-│   └── util/               # Utility scripts
-├── tests/                  # Unit tests (Catch2)
-├── bin/                    # Build output
-├── coverage/               # Coverage reports
-├── install.bat             # Installer script
-└── uninstall.bat           # Uninstaller script
+│   ├── build/                  # Build scripts
+│   ├── hdd/                    # PowerShell control scripts
+│   └── util/                   # Utility scripts
+├── tests/                      # Unit tests (Catch2)
+├── bin/                        # Build output (hdd-toggle.exe)
+├── install.bat                 # Installer script
+└── uninstall.bat               # Uninstaller script
 ```
 
 ## Contributing
@@ -243,8 +251,8 @@ winget install OpenCppCoverage.OpenCppCoverage
 ### Verify Relay
 
 ```cmd
-relay.exe all on   # Should hear click
-relay.exe all off  # Should hear click
+hdd-toggle relay on   # Should hear click
+hdd-toggle relay off  # Should hear click
 ```
 
 ### Check Drive Serial

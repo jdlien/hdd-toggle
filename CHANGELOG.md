@@ -1,6 +1,39 @@
 # Changelog
 
-All notable changes to HDD Control will be documented in this file.
+All notable changes to HDD Toggle will be documented in this file.
+
+## [3.0.0] - 2026-02-03
+
+### Breaking Changes
+- **Unified binary**: All 4 executables consolidated into single `hdd-toggle.exe`
+  - `hdd-control.exe` → `hdd-toggle.exe` (or `hdd-toggle gui`)
+  - `relay.exe on/off` → `hdd-toggle relay on/off`
+  - `wake-hdd.exe` → `hdd-toggle wake`
+  - `sleep-hdd.exe` → `hdd-toggle sleep`
+- Config file `[Commands]` section removed (wake/sleep now internal)
+
+### Added
+- **CLI interface**: New subcommand-based CLI
+  - `hdd-toggle wake` - Power on drive
+  - `hdd-toggle sleep [--offline]` - Power off drive
+  - `hdd-toggle relay <on|off>` - Control all relays
+  - `hdd-toggle relay <1|2> <on|off>` - Control single relay
+  - `hdd-toggle status [--json]` - Show drive status (new!)
+  - `hdd-toggle --help` - Show usage
+  - `hdd-toggle --version` - Show version
+- **JSON status output**: `hdd-toggle status --json` for scripting
+- **Shared core modules**: Extracted common code into `src/core/`
+- **New file structure**: Organized source into `src/gui/`, `src/commands/`, `src/core/`
+
+### Changed
+- Converted C utilities (relay.c, wake-hdd.c, sleep-hdd.c) to C++
+- GUI now calls internal functions instead of spawning processes
+- Simplified installation - only one executable to deploy
+- Updated AUMID for toast notifications
+
+### Removed
+- Separate executables (relay.exe, wake-hdd.exe, sleep-hdd.exe, hdd-control.exe)
+- `WakeCommand` and `SleepCommand` config options (now hardcoded internally)
 
 ## [2.0.0] - 2025-02-03
 

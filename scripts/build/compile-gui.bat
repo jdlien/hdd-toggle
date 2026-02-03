@@ -1,5 +1,5 @@
 @echo off
-REM Build HDD Control GUI application
+REM Build HDD Toggle unified binary
 REM Run from project root or from scripts/build/
 
 REM Get script directory and project root
@@ -9,7 +9,8 @@ set "PROJECT_ROOT=%SCRIPT_DIR%..\.."
 REM Change to project root for consistent paths
 pushd "%PROJECT_ROOT%"
 
-echo Building HDD Control GUI with icon...
+echo Building HDD Toggle unified binary...
+echo.
 
 set "VSPATH=C:\Program Files\Microsoft Visual Studio\2022\Community"
 set "VCPATH=%VSPATH%\VC\Tools\MSVC\14.44.35207"
@@ -29,18 +30,45 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo Compiling GUI application...
-cl.exe /nologo /O2 /MT /EHsc /std:c++17 /I include src\hdd-control-gui.cpp /Fe:bin\hdd-control.exe res\hdd-icon.res shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib dwmapi.lib WindowsApp.lib /link /SUBSYSTEM:WINDOWS
+echo Compiling unified binary...
+cl.exe /nologo /O2 /MT /EHsc /std:c++17 /I include ^
+    src\main.cpp ^
+    src\core\process.cpp ^
+    src\core\admin.cpp ^
+    src\commands\relay.cpp ^
+    src\commands\wake.cpp ^
+    src\commands\sleep.cpp ^
+    src\commands\status.cpp ^
+    src\gui\tray-app.cpp ^
+    /Fe:bin\hdd-toggle.exe ^
+    res\hdd-icon.res ^
+    shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib dwmapi.lib hid.lib WindowsApp.lib shlwapi.lib propsys.lib ^
+    /link /SUBSYSTEM:WINDOWS
 
 REM Clean up intermediate files
-if exist src\hdd-control-gui.obj del src\hdd-control-gui.obj >nul 2>nul
-if exist hdd-control-gui.obj del hdd-control-gui.obj >nul 2>nul
+if exist src\main.obj del src\main.obj >nul 2>nul
+if exist src\core\process.obj del src\core\process.obj >nul 2>nul
+if exist src\core\admin.obj del src\core\admin.obj >nul 2>nul
+if exist src\commands\relay.obj del src\commands\relay.obj >nul 2>nul
+if exist src\commands\wake.obj del src\commands\wake.obj >nul 2>nul
+if exist src\commands\sleep.obj del src\commands\sleep.obj >nul 2>nul
+if exist src\commands\status.obj del src\commands\status.obj >nul 2>nul
+if exist src\gui\tray-app.obj del src\gui\tray-app.obj >nul 2>nul
+if exist *.obj del *.obj >nul 2>nul
 if exist res\hdd-icon.res del res\hdd-icon.res >nul 2>nul
 
 if %errorlevel% equ 0 (
     echo.
-    echo SUCCESS! Built bin\hdd-control.exe
-    if exist bin\hdd-control.exe for %%f in (bin\hdd-control.exe) do echo   %%f - %%~zf bytes
+    echo SUCCESS! Built bin\hdd-toggle.exe
+    if exist bin\hdd-toggle.exe for %%f in (bin\hdd-toggle.exe) do echo   %%f - %%~zf bytes
+    echo.
+    echo Usage:
+    echo   hdd-toggle              Launch tray app
+    echo   hdd-toggle wake         Wake the drive
+    echo   hdd-toggle sleep        Sleep the drive
+    echo   hdd-toggle status       Show drive status
+    echo   hdd-toggle relay on/off Control relay
+    echo   hdd-toggle --help       Show help
 ) else (
     echo.
     echo Build failed with error code %errorlevel%

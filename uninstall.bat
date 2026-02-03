@@ -12,7 +12,7 @@ set "INSTALL_DIR=%LOCALAPPDATA%\HDD-Toggle"
 set "SHORTCUT_PATH=%APPDATA%\Microsoft\Windows\Start Menu\Programs\HDD Toggle.lnk"
 
 :: Check if installed
-if not exist "%INSTALL_DIR%\hdd-control.exe" (
+if not exist "%INSTALL_DIR%\hdd-toggle.exe" (
     echo HDD Toggle does not appear to be installed at:
     echo %INSTALL_DIR%
     echo.
@@ -58,6 +58,8 @@ if exist "%SHORTCUT_PATH%" (
 
 :: Kill the process if running
 echo Stopping HDD Toggle if running...
+taskkill /f /im hdd-toggle.exe >nul 2>&1
+:: Also try old executable name
 taskkill /f /im hdd-control.exe >nul 2>&1
 
 :: Small delay to ensure process is stopped
