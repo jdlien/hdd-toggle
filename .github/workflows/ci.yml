@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-test:
+  test:
     runs-on: windows-latest
 
     steps:
@@ -35,7 +35,30 @@ jobs:
         name: test-results
         path: test-results.xml
 
-    - name: Build Application
+  build:
+    runs-on: windows-latest
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            msvc_arch: x64
+            artifact_name: hdd-toggle-x64
+            output_name: hdd-toggle.exe
+          - arch: arm64
+            msvc_arch: amd64_arm64
+            artifact_name: hdd-toggle-arm64
+            output_name: hdd-toggle-arm64.exe
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Visual Studio Dev Environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: ${{ matrix.msvc_arch }}
+
+    - name: Build Application (${{ matrix.arch }})
       run: |
         if not exist bin mkdir bin
         rc.exe /nologo /fo res\hdd-icon.res res\hdd-icon.rc
@@ -49,7 +72,7 @@ jobs:
           src\commands\sleep.cpp ^
           src\commands\status.cpp ^
           src\gui\tray-app.cpp ^
-          /Fe:bin\hdd-toggle.exe ^
+          /Fe:bin\${{ matrix.output_name }} ^
           res\hdd-icon.res ^
           shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib dwmapi.lib hid.lib WindowsApp.lib shlwapi.lib propsys.lib ^
           /link /SUBSYSTEM:WINDOWS
@@ -58,5 +81,5 @@ jobs:
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: hdd-toggle
-        path: bin\hdd-toggle.exe
+        name: ${{ matrix.artifact_name }}
+        path: bin\${{ matrix.output_name }}
