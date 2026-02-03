@@ -6,6 +6,12 @@
 *.c text eol=crlf
 *.cpp text eol=crlf
 *.h text eol=crlf
+*.hpp text eol=crlf
+
+# Config files
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ini text eol=crlf
 
 # Markdown files use LF (standard)
 *.md text eol=lf

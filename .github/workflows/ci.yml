@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Visual Studio Dev Environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    - name: Build Tests
+      run: |
+        cl.exe /nologo /EHsc /std:c++17 /I. /Fetests\run-tests.exe tests\test_main.cpp tests\test_utils.cpp
+      shell: cmd
+
+    - name: Run Tests
+      run: |
+        tests\run-tests.exe --reporter junit --out test-results.xml
+      shell: cmd
+
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: test-results.xml
+
+    - name: Build Application
+      run: |
+        rc.exe /nologo /fo hdd-icon.res hdd-icon.rc
+        cl.exe /nologo /O2 /MT /EHsc hdd-control-gui.cpp /Fe:hdd-control.exe hdd-icon.res shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib dwmapi.lib /link /SUBSYSTEM:WINDOWS
+      shell: cmd
+
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: hdd-control
+        path: hdd-control.exe
