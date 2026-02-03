@@ -4,6 +4,8 @@ A Windows system tray application for controlling mechanical hard drive power vi
 
 ![Windows 11](https://img.shields.io/badge/Windows-11-0078D6?logo=windows)
 ![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)
+![x64](https://img.shields.io/badge/x64-supported-blue)
+![ARM64](https://img.shields.io/badge/ARM64-supported-blue)
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -30,7 +32,7 @@ Perfect for NAS drives, backup drives, or any HDD you want to power down when no
 
 ### Requirements
 
-- Windows 10/11
+- Windows 10/11 (x64 or ARM64)
 - [DCT Tech 2-Channel USB HID Relay](https://www.amazon.ca/dp/B0DKBY5YM1) (or compatible)
 - Hard drive wired through relay contacts
 - [RemoveDrive.exe](https://www.uwe-sieber.de/drivetools_e.html) on PATH (for safe ejection)
@@ -39,8 +41,8 @@ Perfect for NAS drives, backup drives, or any HDD you want to power down when no
 
 **Using the installer (recommended):**
 
-1. Download the latest release or build from source
-2. Run `install.bat`
+1. Download the latest release (includes both x64 and ARM64 binaries)
+2. Run `install.bat` (auto-detects architecture)
 3. Edit `%LOCALAPPDATA%\HDD-Toggle\hdd-control.ini` with your drive's serial number
 4. Launch "HDD Toggle" from the Start Menu
 
@@ -154,8 +156,11 @@ When relays are OFF, the drive has no power. When ON, the drive powers up.
 ### Build Commands
 
 ```batch
-# Build the unified binary
+# Build for x64 (default)
 scripts\build\compile-gui.bat
+
+# Build for ARM64
+scripts\build\compile-gui.bat arm64
 
 # Build and run tests
 scripts\build\compile-tests.bat
@@ -163,6 +168,10 @@ scripts\build\compile-tests.bat
 # Run tests with coverage report
 scripts\build\coverage.bat --open
 ```
+
+Output binaries:
+- `bin\hdd-toggle.exe` - x64 build
+- `bin\hdd-toggle-arm64.exe` - ARM64 build
 
 ### Project Structure
 
