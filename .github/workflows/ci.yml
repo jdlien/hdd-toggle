@@ -39,11 +39,24 @@ jobs:
       run: |
         if not exist bin mkdir bin
         rc.exe /nologo /fo res\hdd-icon.res res\hdd-icon.rc
-        cl.exe /nologo /O2 /MT /EHsc /std:c++17 /I include src\hdd-control-gui.cpp /Fe:bin\hdd-control.exe res\hdd-icon.res shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib dwmapi.lib WindowsApp.lib /link /SUBSYSTEM:WINDOWS
+        cl.exe /nologo /O2 /MT /EHsc /std:c++17 /I include ^
+          src\main.cpp ^
+          src\core\process.cpp ^
+          src\core\admin.cpp ^
+          src\core\disk.cpp ^
+          src\commands\relay.cpp ^
+          src\commands\wake.cpp ^
+          src\commands\sleep.cpp ^
+          src\commands\status.cpp ^
+          src\gui\tray-app.cpp ^
+          /Fe:bin\hdd-toggle.exe ^
+          res\hdd-icon.res ^
+          shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib dwmapi.lib hid.lib WindowsApp.lib shlwapi.lib propsys.lib ^
+          /link /SUBSYSTEM:WINDOWS
       shell: cmd
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: hdd-control
-        path: bin\hdd-control.exe
+        name: hdd-toggle
+        path: bin\hdd-toggle.exe
