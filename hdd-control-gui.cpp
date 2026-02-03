@@ -14,6 +14,31 @@
 #include <shlwapi.h>
 #include <dwmapi.h>
 
+// Simple COM smart pointer template (like ComPtr but without WRL dependency)
+template<typename T>
+class ComPtr {
+public:
+    ComPtr() : m_ptr(nullptr) {}
+    ~ComPtr() { Release(); }
+
+    T** operator&() { return &m_ptr; }
+    T* operator->() { return m_ptr; }
+    T* Get() const { return m_ptr; }
+    operator bool() const { return m_ptr != nullptr; }
+
+    void Release() {
+        if (m_ptr) {
+            m_ptr->Release();
+            m_ptr = nullptr;
+        }
+    }
+
+private:
+    ComPtr(const ComPtr&) = delete;
+    ComPtr& operator=(const ComPtr&) = delete;
+    T* m_ptr;
+};
+
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "shlwapi.lib")
@@ -610,112 +635,83 @@ DWORD WINAPI AsyncPeriodicCheck(LPVOID lpParam) {
     return 0;
 }
 
-// WMI-based disk detection using COM - completely silent, no windows!
+// RAII wrapper for COM initialization
+class ComInitializer {
+public:
+    ComInitializer() : m_initialized(false) {
+        HRESULT hr = CoInitializeEx(0, COINIT_MULTITHREADED);
+        m_initialized = SUCCEEDED(hr);
+    }
+    ~ComInitializer() {
+        if (m_initialized) CoUninitialize();
+    }
+    bool IsInitialized() const { return m_initialized; }
+private:
+    bool m_initialized;
+};
+
+// WMI-based disk detection using COM with smart pointers
 DriveState DetectDriveState() {
-    HRESULT hres;
-    IWbemLocator *pLoc = NULL;
-    IWbemServices *pSvc = NULL;
-    IEnumWbemClassObject* pEnumerator = NULL;
-    IWbemClassObject *pclsObj[10];
-    ULONG uReturn = 0;
     DriveState state = DS_UNKNOWN;
     BOOL foundTarget = FALSE;
 
-    // Initialize COM
-    hres = CoInitializeEx(0, COINIT_MULTITHREADED);
-    if (FAILED(hres)) {
+    // RAII COM initialization - automatically calls CoUninitialize on scope exit
+    ComInitializer comInit;
+    if (!comInit.IsInitialized()) {
         return DS_UNKNOWN;
     }
 
     // Set COM security levels
-    hres = CoInitializeSecurity(
-        NULL,
-        -1,                          // COM authentication
-        NULL,                        // Authentication services
-        NULL,                        // Reserved
-        RPC_C_AUTHN_LEVEL_NONE,      // Default authentication
-        RPC_C_IMP_LEVEL_IMPERSONATE, // Default Impersonation
-        NULL,                        // Authentication info
-        EOAC_NONE,                   // Additional capabilities
-        NULL                         // Reserved
+    CoInitializeSecurity(
+        NULL, -1, NULL, NULL,
+        RPC_C_AUTHN_LEVEL_NONE,
+        RPC_C_IMP_LEVEL_IMPERSONATE,
+        NULL, EOAC_NONE, NULL
     );
 
-    // Obtain the initial locator to WMI
-    hres = CoCreateInstance(
-        CLSID_WbemLocator,
-        0,
-        CLSCTX_INPROC_SERVER,
-        IID_IWbemLocator, (LPVOID *) &pLoc);
+    // Smart pointers automatically release COM objects when they go out of scope
+    ComPtr<IWbemLocator> pLoc;
+    HRESULT hres = CoCreateInstance(
+        CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER,
+        IID_IWbemLocator, (LPVOID*)&pLoc);
+    if (FAILED(hres)) return DS_UNKNOWN;
 
-    if (FAILED(hres)) {
-        CoUninitialize();
-        return DS_UNKNOWN;
-    }
-
-    // Connect to WMI through the IWbemLocator::ConnectServer method
+    // Connect to WMI
+    ComPtr<IWbemServices> pSvc;
     hres = pLoc->ConnectServer(
-        _bstr_t(L"ROOT\\Microsoft\\Windows\\Storage"), // Object path of WMI namespace
-        NULL,                    // User name. NULL = current user
-        NULL,                    // User password. NULL = current
-        0,                       // Locale. NULL indicates current
-        NULL,                    // Security flags.
-        0,                       // Authority (for example, Kerberos)
-        0,                       // Context object
-        &pSvc                    // pointer to IWbemServices proxy
-    );
-
-    if (FAILED(hres)) {
-        pLoc->Release();
-        CoUninitialize();
-        return DS_UNKNOWN;
-    }
+        _bstr_t(L"ROOT\\Microsoft\\Windows\\Storage"),
+        NULL, NULL, 0, NULL, 0, 0, &pSvc);
+    if (FAILED(hres)) return DS_UNKNOWN;
 
     // Set security levels on the proxy
     hres = CoSetProxyBlanket(
-        pSvc,                        // Indicates the proxy to set
-        RPC_C_AUTHN_WINNT,           // RPC_C_AUTHN_xxx
-        RPC_C_AUTHZ_NONE,            // RPC_C_AUTHZ_xxx
-        NULL,                        // Server principal name
-        RPC_C_AUTHN_LEVEL_CALL,      // RPC_C_AUTHN_LEVEL_xxx
-        RPC_C_IMP_LEVEL_IMPERSONATE, // RPC_C_IMP_LEVEL_xxx
-        NULL,                        // client identity
-        EOAC_NONE                    // proxy capabilities
-    );
+        pSvc.Get(),
+        RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, NULL,
+        RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE,
+        NULL, EOAC_NONE);
+    if (FAILED(hres)) return DS_UNKNOWN;
 
-    if (FAILED(hres)) {
-        pSvc->Release();
-        pLoc->Release();
-        CoUninitialize();
-        return DS_UNKNOWN;
-    }
-
-    // Use the IWbemServices pointer to make requests of WMI
+    // Execute WMI query
+    ComPtr<IEnumWbemClassObject> pEnumerator;
     hres = pSvc->ExecQuery(
         bstr_t("WQL"),
         bstr_t("SELECT * FROM MSFT_Disk"),
         WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
-        NULL,
-        &pEnumerator);
+        NULL, &pEnumerator);
+    if (FAILED(hres)) return DS_UNKNOWN;
 
-    if (FAILED(hres)) {
-        pSvc->Release();
-        pLoc->Release();
-        CoUninitialize();
-        return DS_UNKNOWN;
-    }
-
-    // Get the data from the query
+    // Iterate through results
     while (pEnumerator) {
-        HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1, pclsObj, &uReturn);
-
-        if (0 == uReturn) {
-            break;
-        }
+        ComPtr<IWbemClassObject> pclsObj;
+        ULONG uReturn = 0;
+        HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn);
+        if (uReturn == 0) break;
 
         VARIANT vtProp;
+        VariantInit(&vtProp);
 
         // Get SerialNumber
-        hr = pclsObj[0]->Get(L"SerialNumber", 0, &vtProp, 0, 0);
+        hr = pclsObj->Get(L"SerialNumber", 0, &vtProp, 0, 0);
         if (SUCCEEDED(hr) && vtProp.vt == VT_BSTR) {
             _bstr_t serialNumber(vtProp.bstrVal, true);
             char serialStr[256];
@@ -734,29 +730,18 @@ DriveState DetectDriveState() {
                 VariantClear(&vtProp);
 
                 // Get IsOffline property
-                hr = pclsObj[0]->Get(L"IsOffline", 0, &vtProp, 0, 0);
+                hr = pclsObj->Get(L"IsOffline", 0, &vtProp, 0, 0);
                 if (SUCCEEDED(hr) && vtProp.vt == VT_BOOL) {
-                    if (vtProp.boolVal == VARIANT_TRUE) {
-                        state = DS_OFFLINE;
-                    } else {
-                        state = DS_ONLINE;
-                    }
+                    state = (vtProp.boolVal == VARIANT_TRUE) ? DS_OFFLINE : DS_ONLINE;
                 }
                 VariantClear(&vtProp);
-                pclsObj[0]->Release();
                 break;
             }
         }
         VariantClear(&vtProp);
-        pclsObj[0]->Release();
     }
 
-    // Cleanup
-    if (pEnumerator) pEnumerator->Release();
-    if (pSvc) pSvc->Release();
-    if (pLoc) pLoc->Release();
-    CoUninitialize();
-
+    // No manual cleanup needed - ComPtr and ComInitializer handle it automatically
     return foundTarget ? state : DS_OFFLINE;
 }
 
