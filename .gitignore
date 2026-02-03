@@ -46,6 +46,9 @@ Release/
 # Coverage reports
 /coverage/
 
+# User configuration (contains drive serial numbers)
+hdd-control.ini
+
 # Python
 __pycache__/
 *.py[cod]

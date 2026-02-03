@@ -1,0 +1,31 @@
+# HDD Control Configuration File
+# Copy this file to hdd-control.ini and customize for your setup.
+#
+# Find your drive's serial number with:
+#   wmic diskdrive get model,serialnumber
+
+[Drive]
+# REQUIRED: Set these to match your target hard drive
+SerialNumber=YOUR_DRIVE_SERIAL_HERE
+Model=Your Drive Model Name
+
+[Commands]
+# Paths to utilities (relative to hdd-control.exe or absolute)
+WakeCommand=wake-hdd.exe
+SleepCommand=sleep-hdd.exe
+
+[Timing]
+# How often to check drive status (minutes, minimum 1)
+PeriodicCheckMinutes=10
+# Delay after wake/sleep operations before checking status (seconds)
+PostOperationCheckSeconds=3
+
+[UI]
+# Show toast notifications for status changes
+ShowNotifications=true
+# Prevent rapid clicks from spamming notifications (seconds)
+ClickDebounceSeconds=2
+
+[Advanced]
+# Enable debug logging (creates debug.log)
+DebugMode=false
