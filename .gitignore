@@ -43,6 +43,9 @@ Release/
 # Project build output
 /bin/
 
+# Coverage reports
+/coverage/
+
 # Python
 __pycache__/
 *.py[cod]

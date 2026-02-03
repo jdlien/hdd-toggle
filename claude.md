@@ -84,6 +84,10 @@ scripts\build\compile.bat
 
 # Build and run unit tests
 scripts\build\compile-tests.bat
+
+# Run tests with coverage (requires OpenCppCoverage)
+scripts\build\coverage.bat
+scripts\build\coverage.bat --open   # Auto-open HTML report
 ```
 
 ### Toolchain Requirements
