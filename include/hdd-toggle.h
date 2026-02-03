@@ -15,7 +15,7 @@ namespace hdd {
 
 constexpr int VERSION_MAJOR = 3;
 constexpr int VERSION_MINOR = 0;
-constexpr int VERSION_PATCH = 0;
+constexpr int VERSION_PATCH = 1;
 
 inline std::string GetVersionString() {
     return std::to_string(VERSION_MAJOR) + "." +

@@ -2,6 +2,13 @@
 
 All notable changes to HDD Toggle will be documented in this file.
 
+## [3.0.1] - 2026-02-03
+
+### Added
+- **ARM64 support**: Native Windows ARM64 build (`hdd-toggle-arm64.exe`)
+- Build script now accepts architecture parameter: `compile-gui.bat [x64|arm64]`
+- CI builds both x64 and ARM64 binaries
+
 ## [3.0.0] - 2026-02-03
 
 ### Breaking Changes
