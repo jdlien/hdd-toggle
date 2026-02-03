@@ -1,7 +1,7 @@
 // Tests for HDD Control utilities
 
 #include "catch.hpp"
-#include "../hdd-utils.h"
+#include "hdd-utils.h"
 
 using namespace hdd;
 

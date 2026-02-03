@@ -1,4 +1,14 @@
 @echo off
+REM Build and run unit tests
+REM Run from project root or from scripts/build/
+
+REM Get script directory and project root
+set "SCRIPT_DIR=%~dp0"
+set "PROJECT_ROOT=%SCRIPT_DIR%..\.."
+
+REM Change to project root for consistent paths
+pushd "%PROJECT_ROOT%"
+
 echo Building HDD Control Tests...
 
 set "VSPATH=C:\Program Files\Microsoft Visual Studio\2022\Community"
@@ -11,10 +21,13 @@ set "INCLUDE=%VCPATH%\include;%SDKPATH%\Include\%SDKVER%\ucrt;%SDKPATH%\Include\
 set "LIB=%VCPATH%\lib\x64;%SDKPATH%\Lib\%SDKVER%\ucrt\x64;%SDKPATH%\Lib\%SDKVER%\um\x64"
 
 echo Compiling test runner...
-cl.exe /nologo /EHsc /std:c++17 /I. /Fetests\run-tests.exe tests\test_main.cpp tests\test_utils.cpp
+cl.exe /nologo /EHsc /std:c++17 /I include /Fe:tests\run-tests.exe tests\test_main.cpp tests\test_utils.cpp
 
+REM Clean up intermediate files
 if exist tests\test_main.obj del tests\test_main.obj >nul 2>nul
 if exist tests\test_utils.obj del tests\test_utils.obj >nul 2>nul
+if exist test_main.obj del test_main.obj >nul 2>nul
+if exist test_utils.obj del test_utils.obj >nul 2>nul
 
 if %errorlevel% equ 0 (
     echo.
@@ -28,3 +41,5 @@ if %errorlevel% equ 0 (
     echo.
     echo Build failed with error code %errorlevel%
 )
+
+popd

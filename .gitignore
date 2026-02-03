@@ -37,8 +37,11 @@ x64/
 x86/
 Debug/
 Release/
-Build/
-build/
+/Build/
+/build/
+
+# Project build output
+/bin/
 
 # Python
 __pycache__/
