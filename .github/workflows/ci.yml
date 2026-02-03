@@ -20,7 +20,7 @@ jobs:
 
     - name: Build Tests
       run: |
-        cl.exe /nologo /EHsc /std:c++17 /I. /Fetests\run-tests.exe tests\test_main.cpp tests\test_utils.cpp
+        cl.exe /nologo /EHsc /std:c++17 /Zi /I include /Fe:tests\run-tests.exe tests\test_main.cpp tests\test_utils.cpp
       shell: cmd
 
     - name: Run Tests
@@ -37,12 +37,13 @@ jobs:
 
     - name: Build Application
       run: |
-        rc.exe /nologo /fo hdd-icon.res hdd-icon.rc
-        cl.exe /nologo /O2 /MT /EHsc hdd-control-gui.cpp /Fe:hdd-control.exe hdd-icon.res shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib dwmapi.lib /link /SUBSYSTEM:WINDOWS
+        if not exist bin mkdir bin
+        rc.exe /nologo /fo res\hdd-icon.res res\hdd-icon.rc
+        cl.exe /nologo /O2 /MT /EHsc /std:c++17 /I include src\hdd-control-gui.cpp /Fe:bin\hdd-control.exe res\hdd-icon.res shell32.lib advapi32.lib user32.lib comctl32.lib wbemuuid.lib ole32.lib oleaut32.lib setupapi.lib dwmapi.lib WindowsApp.lib /link /SUBSYSTEM:WINDOWS
       shell: cmd
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
         name: hdd-control
-        path: hdd-control.exe
+        path: bin\hdd-control.exe
