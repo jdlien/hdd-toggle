@@ -165,6 +165,35 @@ struct AppConfig {
     BOOL debugMode;
 };
 
+// Application state - encapsulates all runtime state
+struct AppState {
+    // Windows handles
+    HINSTANCE hInstance = nullptr;
+    HWND hWnd = nullptr;
+    HMENU hMenu = nullptr;
+
+    // Tray icon
+    NOTIFYICONDATA nid = {};
+
+    // Drive state
+    DriveState driveState = DS_UNKNOWN;
+    bool isTransitioning = false;
+
+    // Animation
+    UINT_PTR animationTimer = 0;
+    int animationFrame = 0;
+
+    // Timing
+    ULONGLONG lastPeriodicCheck = 0;
+    ULONGLONG lastClickTime = 0;
+
+    // Configuration
+    AppConfig config = {};
+
+    // Windows messages
+    UINT wmTaskbarCreated = 0;
+};
+
 // Function declarations
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 BOOL CreateTrayIcon(HWND hwnd);
@@ -186,19 +215,8 @@ void OnSleepDrive();
 void OnRefreshStatus();
 BOOL IsRunningElevated();
 
-// Global variables
-HINSTANCE g_hInst;
-HWND g_hWnd;
-NOTIFYICONDATA g_nid;
-HMENU g_hMenu;
-DriveState g_driveState = DS_UNKNOWN;
-BOOL g_isTransitioning = FALSE;
-UINT WM_TASKBARCREATED = 0;  // Will be set by RegisterWindowMessage
-UINT_PTR g_animationTimer = 0;
-int g_animationFrame = 0;
-ULONGLONG g_lastPeriodicCheck = 0;
-ULONGLONG g_lastClickTime = 0;
-AppConfig g_config = {0};
+// Global application state
+AppState g_app;
 
 // Window procedure
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -210,10 +228,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 return -1;
             }
             // Perform immediate initial detection
-            g_driveState = DetectDriveState();
+            g_app.driveState = DetectDriveState();
             UpdateTrayIcon();
             // Start periodic check timer (configurable minutes)
-            SetTimer(hwnd, IDT_PERIODIC_CHECK, g_config.periodicCheckMinutes * 60000, NULL);
+            SetTimer(hwnd, IDT_PERIODIC_CHECK, g_app.config.periodicCheckMinutes * 60000, NULL);
             break;
 
         case WM_TRAYICON:
@@ -250,7 +268,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                     } else {
                         ShowBalloonTip("", "Drive wake failed", NIIF_WARNING);
                     }
-                    SetTimer(hwnd, IDT_STATUS_TIMER, g_config.postOperationCheckSeconds * 1000, NULL);
+                    SetTimer(hwnd, IDT_STATUS_TIMER, g_app.config.postOperationCheckSeconds * 1000, NULL);
                     break;
                 case IDM_SLEEP_COMPLETE:
                     StopProgressAnimation();
@@ -259,7 +277,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                     } else {
                         ShowBalloonTip("", "Drive shutdown failed", NIIF_WARNING);
                     }
-                    SetTimer(hwnd, IDT_STATUS_TIMER, g_config.postOperationCheckSeconds * 1000, NULL);
+                    SetTimer(hwnd, IDT_STATUS_TIMER, g_app.config.postOperationCheckSeconds * 1000, NULL);
                     break;
                 case IDM_STATUS_DISPLAY:
                     // Status display header - no action
@@ -271,25 +289,25 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             if (wParam == IDT_STATUS_TIMER) {
                 // Only used for checking after operations complete
                 DriveState newState = DetectDriveState();
-                if (newState != g_driveState) {
-                    g_driveState = newState;
+                if (newState != g_app.driveState) {
+                    g_app.driveState = newState;
                     UpdateTrayIcon();
                 }
                 // Stop the timer after checking - no continuous polling
                 KillTimer(hwnd, IDT_STATUS_TIMER);
-                g_isTransitioning = FALSE;
+                g_app.isTransitioning = FALSE;
             } else if (wParam == IDT_ANIMATION_TIMER) {
                 // Animate tooltip text with dots
                 char tooltip[128];
                 const char* dots[] = {"", ".", "..", "..."};
-                g_animationFrame = (g_animationFrame + 1) % 4;
+                g_app.animationFrame = (g_app.animationFrame + 1) % 4;
 
                 sprintf_s(tooltip, sizeof(tooltip), "HDD Control - Working%s",
-                          dots[g_animationFrame]);
+                          dots[g_app.animationFrame]);
 
-                strcpy_s(g_nid.szTip, sizeof(g_nid.szTip), tooltip);
-                g_nid.uFlags = NIF_TIP;
-                Shell_NotifyIcon(NIM_MODIFY, &g_nid);
+                strcpy_s(g_app.nid.szTip, sizeof(g_app.nid.szTip), tooltip);
+                g_app.nid.uFlags = NIF_TIP;
+                Shell_NotifyIcon(NIM_MODIFY, &g_app.nid);
             } else if (wParam == IDT_PERIODIC_CHECK) {
                 // Run periodic check in background thread
                 std::thread(AsyncPeriodicCheck, hwnd).detach();
@@ -298,8 +316,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
         case WM_DESTROY:
             RemoveTrayIcon();
-            if (g_hMenu) {
-                DestroyMenu(g_hMenu);
+            if (g_app.hMenu) {
+                DestroyMenu(g_app.hMenu);
             }
             KillTimer(hwnd, IDT_STATUS_TIMER);
             KillTimer(hwnd, IDT_PERIODIC_CHECK);
@@ -308,7 +326,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
         default:
             // Handle TaskbarCreated message (Explorer restart)
-            if (uMsg == WM_TASKBARCREATED) {
+            if (uMsg == g_app.wmTaskbarCreated) {
                 CreateTrayIcon(hwnd);
                 UpdateTrayIcon();
                 return 0;
@@ -320,27 +338,27 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
 // Create system tray icon with modern best practices
 BOOL CreateTrayIcon(HWND hwnd) {
-    ZeroMemory(&g_nid, sizeof(g_nid));
-    g_nid.cbSize = sizeof(g_nid);
-    g_nid.hWnd = hwnd;
-    g_nid.uID = TRAY_ICON_ID;
-    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    g_nid.uCallbackMessage = WM_TRAYICON;
+    ZeroMemory(&g_app.nid, sizeof(g_app.nid));
+    g_app.nid.cbSize = sizeof(g_app.nid);
+    g_app.nid.hWnd = hwnd;
+    g_app.nid.uID = TRAY_ICON_ID;
+    g_app.nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    g_app.nid.uCallbackMessage = WM_TRAYICON;
 
     // Load icon with proper size for system tray (SM_CXSMICON x SM_CYSMICON)
     int cx = GetSystemMetrics(SM_CXSMICON);
     int cy = GetSystemMetrics(SM_CYSMICON);
 
     // Method 1: Load from resources with proper ID and size
-    g_nid.hIcon = (HICON)LoadImage(g_hInst,
+    g_app.nid.hIcon = (HICON)LoadImage(g_app.hInstance,
                                    MAKEINTRESOURCE(IDI_MAIN_ICON),
                                    IMAGE_ICON,
                                    cx, cy,
                                    LR_DEFAULTCOLOR);
 
     // Method 2: Fallback to legacy resource IDs if main fails
-    if (!g_nid.hIcon) {
-        g_nid.hIcon = (HICON)LoadImage(g_hInst,
+    if (!g_app.nid.hIcon) {
+        g_app.nid.hIcon = (HICON)LoadImage(g_app.hInstance,
                                        MAKEINTRESOURCE(1),
                                        IMAGE_ICON,
                                        cx, cy,
@@ -348,9 +366,9 @@ BOOL CreateTrayIcon(HWND hwnd) {
     }
 
     // Method 3: Try loading from external file as last resort
-    if (!g_nid.hIcon) {
+    if (!g_app.nid.hIcon) {
         fs::path iconPath = GetExeDirectory() / "hdd-icon.ico";
-        g_nid.hIcon = (HICON)LoadImage(NULL,
+        g_app.nid.hIcon = (HICON)LoadImage(NULL,
                                        iconPath.string().c_str(),
                                        IMAGE_ICON,
                                        cx, cy,
@@ -358,11 +376,11 @@ BOOL CreateTrayIcon(HWND hwnd) {
     }
 
     // Method 4: System fallback
-    if (!g_nid.hIcon) {
-        g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    if (!g_app.nid.hIcon) {
+        g_app.nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
     }
 
-    strcpy_s(g_nid.szTip, sizeof(g_nid.szTip), "HDD Control - Checking status...");
+    strcpy_s(g_app.nid.szTip, sizeof(g_app.nid.szTip), "HDD Control - Checking status...");
 
     // Add the tray icon with retry logic for startup timing
     // Explorer's notification area may not be ready immediately at logon
@@ -370,7 +388,7 @@ BOOL CreateTrayIcon(HWND hwnd) {
     const int RETRY_DELAY_MS = 1000;
 
     for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        if (Shell_NotifyIcon(NIM_ADD, &g_nid)) {
+        if (Shell_NotifyIcon(NIM_ADD, &g_app.nid)) {
             return TRUE;
         }
         // Wait before retrying - Explorer may still be initializing
@@ -382,10 +400,10 @@ BOOL CreateTrayIcon(HWND hwnd) {
 
 // Remove tray icon
 void RemoveTrayIcon() {
-    Shell_NotifyIcon(NIM_DELETE, &g_nid);
-    if (g_nid.hIcon) {
-        DestroyIcon(g_nid.hIcon);
-        g_nid.hIcon = NULL;
+    Shell_NotifyIcon(NIM_DELETE, &g_app.nid);
+    if (g_app.nid.hIcon) {
+        DestroyIcon(g_app.nid.hIcon);
+        g_app.nid.hIcon = NULL;
     }
 }
 
@@ -395,77 +413,77 @@ void ShowContextMenu(HWND hwnd) {
     GetCursorPos(&pt);
 
     // Always destroy and recreate the menu to ensure correct state
-    if (g_hMenu) {
-        DestroyMenu(g_hMenu);
+    if (g_app.hMenu) {
+        DestroyMenu(g_app.hMenu);
     }
 
-    g_hMenu = CreatePopupMenu();
+    g_app.hMenu = CreatePopupMenu();
 
     // Add status display at the top as disabled text (allows Windows 11 modern menu styling)
     const char* statusText;
-    if (g_driveState == DS_ONLINE) {
+    if (g_app.driveState == DS_ONLINE) {
         statusText = "Status: Drive Online";
-    } else if (g_driveState == DS_OFFLINE) {
+    } else if (g_app.driveState == DS_OFFLINE) {
         statusText = "Status: Drive Offline";
-    } else if (g_driveState == DS_TRANSITIONING) {
+    } else if (g_app.driveState == DS_TRANSITIONING) {
         statusText = "Status: Transitioning...";
     } else {
         statusText = "Status: Unknown";
     }
-    AppendMenu(g_hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, IDM_STATUS_DISPLAY, statusText);
-    AppendMenu(g_hMenu, MF_SEPARATOR, 0, NULL);
+    AppendMenu(g_app.hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, IDM_STATUS_DISPLAY, statusText);
+    AppendMenu(g_app.hMenu, MF_SEPARATOR, 0, NULL);
 
     // Add appropriate action based on current drive state
-    if (g_driveState == DS_ONLINE) {
-        AppendMenu(g_hMenu, MF_STRING, IDM_SLEEP_DRIVE, "Sleep Drive");
+    if (g_app.driveState == DS_ONLINE) {
+        AppendMenu(g_app.hMenu, MF_STRING, IDM_SLEEP_DRIVE, "Sleep Drive");
     } else {
-        AppendMenu(g_hMenu, MF_STRING, IDM_WAKE_DRIVE, "Wake Drive");
+        AppendMenu(g_app.hMenu, MF_STRING, IDM_WAKE_DRIVE, "Wake Drive");
     }
 
-    AppendMenu(g_hMenu, MF_STRING, IDM_REFRESH_STATUS, "Refresh Status");
-    AppendMenu(g_hMenu, MF_SEPARATOR, 0, NULL);
-    AppendMenu(g_hMenu, MF_STRING, IDM_EXIT, "Exit");
+    AppendMenu(g_app.hMenu, MF_STRING, IDM_REFRESH_STATUS, "Refresh Status");
+    AppendMenu(g_app.hMenu, MF_SEPARATOR, 0, NULL);
+    AppendMenu(g_app.hMenu, MF_STRING, IDM_EXIT, "Exit");
 
     // Disable actions during transition
-    if (g_isTransitioning) {
-        EnableMenuItem(g_hMenu, (g_driveState == DS_ONLINE) ? IDM_SLEEP_DRIVE : IDM_WAKE_DRIVE, MF_GRAYED);
+    if (g_app.isTransitioning) {
+        EnableMenuItem(g_app.hMenu, (g_app.driveState == DS_ONLINE) ? IDM_SLEEP_DRIVE : IDM_WAKE_DRIVE, MF_GRAYED);
     }
 
     SetForegroundWindow(hwnd);
     // Use proper menu positioning that stays within screen bounds
-    TrackPopupMenu(g_hMenu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_RIGHTALIGN, pt.x, pt.y, 0, hwnd, NULL);
+    TrackPopupMenu(g_app.hMenu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_RIGHTALIGN, pt.x, pt.y, 0, hwnd, NULL);
     PostMessage(hwnd, WM_NULL, 0, 0);
 }
 
 // Update tray icon and tooltip based on current state
 void UpdateTrayIcon() {
-    switch (g_driveState) {
+    switch (g_app.driveState) {
         case DS_ONLINE:
-            strcpy_s(g_nid.szTip, sizeof(g_nid.szTip), "HDD Status: Drive Online");
+            strcpy_s(g_app.nid.szTip, sizeof(g_app.nid.szTip), "HDD Status: Drive Online");
             break;
         case DS_OFFLINE:
-            strcpy_s(g_nid.szTip, sizeof(g_nid.szTip), "HDD Status: Drive Offline");
+            strcpy_s(g_app.nid.szTip, sizeof(g_app.nid.szTip), "HDD Status: Drive Offline");
             break;
         case DS_TRANSITIONING:
-            strcpy_s(g_nid.szTip, sizeof(g_nid.szTip), "HDD Status: Drive Transitioning...");
+            strcpy_s(g_app.nid.szTip, sizeof(g_app.nid.szTip), "HDD Status: Drive Transitioning...");
             break;
         default:
-            strcpy_s(g_nid.szTip, sizeof(g_nid.szTip), "HDD Status: Drive Unknown");
+            strcpy_s(g_app.nid.szTip, sizeof(g_app.nid.szTip), "HDD Status: Drive Unknown");
             break;
     }
 
     // Load the appropriate icon for the current state
-    HICON newIcon = LoadIconForDriveState(g_driveState);
+    HICON newIcon = LoadIconForDriveState(g_app.driveState);
     if (newIcon) {
-        if (g_nid.hIcon) {
-            DestroyIcon(g_nid.hIcon);
+        if (g_app.nid.hIcon) {
+            DestroyIcon(g_app.nid.hIcon);
         }
-        g_nid.hIcon = newIcon;
+        g_app.nid.hIcon = newIcon;
     }
 
     // Keep the icon flag to preserve the icon when updating
-    g_nid.uFlags = NIF_TIP | NIF_ICON;  // Remove NIF_GUID for now
-    Shell_NotifyIcon(NIM_MODIFY, &g_nid);
+    g_app.nid.uFlags = NIF_TIP | NIF_ICON;  // Remove NIF_GUID for now
+    Shell_NotifyIcon(NIM_MODIFY, &g_app.nid);
 }
 
 // Load the appropriate icon based on drive state
@@ -490,7 +508,7 @@ HICON LoadIconForDriveState(DriveState state) {
     int cx = GetSystemMetrics(SM_CXSMICON);
     int cy = GetSystemMetrics(SM_CYSMICON);
 
-    return (HICON)LoadImage(g_hInst,
+    return (HICON)LoadImage(g_app.hInstance,
                            MAKEINTRESOURCE(iconResource),
                            IMAGE_ICON,
                            cx, cy,
@@ -553,20 +571,20 @@ void LoadConfiguration() {
     const char* iniPathC = iniPathStr.c_str();
 
     // Set defaults first
-    strcpy_s(g_config.targetSerial, sizeof(g_config.targetSerial), "2VH7TM9L");
-    strcpy_s(g_config.targetModel, sizeof(g_config.targetModel), "WDC WD181KFGX-68AFPN0");
-    strcpy_s(g_config.wakeCommand, sizeof(g_config.wakeCommand), "wake-hdd.exe");
-    strcpy_s(g_config.sleepCommand, sizeof(g_config.sleepCommand), "sleep-hdd.exe");
-    g_config.periodicCheckMinutes = 10;
-    g_config.postOperationCheckSeconds = 3;
-    g_config.showNotifications = TRUE;
-    g_config.clickDebounceSeconds = 2;
-    g_config.startMinimized = TRUE;
-    g_config.checkElevation = TRUE;
-    g_config.wmiTimeout = 30000;
-    g_config.threadTimeout = 60000;
-    g_config.maxRetries = 3;
-    g_config.debugMode = FALSE;
+    strcpy_s(g_app.config.targetSerial, sizeof(g_app.config.targetSerial), "2VH7TM9L");
+    strcpy_s(g_app.config.targetModel, sizeof(g_app.config.targetModel), "WDC WD181KFGX-68AFPN0");
+    strcpy_s(g_app.config.wakeCommand, sizeof(g_app.config.wakeCommand), "wake-hdd.exe");
+    strcpy_s(g_app.config.sleepCommand, sizeof(g_app.config.sleepCommand), "sleep-hdd.exe");
+    g_app.config.periodicCheckMinutes = 10;
+    g_app.config.postOperationCheckSeconds = 3;
+    g_app.config.showNotifications = TRUE;
+    g_app.config.clickDebounceSeconds = 2;
+    g_app.config.startMinimized = TRUE;
+    g_app.config.checkElevation = TRUE;
+    g_app.config.wmiTimeout = 30000;
+    g_app.config.threadTimeout = 60000;
+    g_app.config.maxRetries = 3;
+    g_app.config.debugMode = FALSE;
 
     // Always try to create default INI if it doesn't exist
     if (!fs::exists(iniPath)) {
@@ -575,45 +593,45 @@ void LoadConfiguration() {
     }
 
     // Read values from INI file
-    GetPrivateProfileString("Drive", "SerialNumber", g_config.targetSerial,
-                           g_config.targetSerial, sizeof(g_config.targetSerial), iniPathC);
-    GetPrivateProfileString("Drive", "Model", g_config.targetModel,
-                           g_config.targetModel, sizeof(g_config.targetModel), iniPathC);
+    GetPrivateProfileString("Drive", "SerialNumber", g_app.config.targetSerial,
+                           g_app.config.targetSerial, sizeof(g_app.config.targetSerial), iniPathC);
+    GetPrivateProfileString("Drive", "Model", g_app.config.targetModel,
+                           g_app.config.targetModel, sizeof(g_app.config.targetModel), iniPathC);
 
-    GetPrivateProfileString("Commands", "WakeCommand", g_config.wakeCommand,
-                           g_config.wakeCommand, sizeof(g_config.wakeCommand), iniPathC);
-    GetPrivateProfileString("Commands", "SleepCommand", g_config.sleepCommand,
-                           g_config.sleepCommand, sizeof(g_config.sleepCommand), iniPathC);
+    GetPrivateProfileString("Commands", "WakeCommand", g_app.config.wakeCommand,
+                           g_app.config.wakeCommand, sizeof(g_app.config.wakeCommand), iniPathC);
+    GetPrivateProfileString("Commands", "SleepCommand", g_app.config.sleepCommand,
+                           g_app.config.sleepCommand, sizeof(g_app.config.sleepCommand), iniPathC);
 
     // Read timing values
-    DWORD checkMinutes = GetPrivateProfileInt("Timing", "PeriodicCheckMinutes", g_config.periodicCheckMinutes, iniPathC);
+    DWORD checkMinutes = GetPrivateProfileInt("Timing", "PeriodicCheckMinutes", g_app.config.periodicCheckMinutes, iniPathC);
     if (checkMinutes >= 1) { // Minimum 1 minute
-        g_config.periodicCheckMinutes = checkMinutes;
+        g_app.config.periodicCheckMinutes = checkMinutes;
     }
-    g_config.postOperationCheckSeconds = GetPrivateProfileInt("Timing", "PostOperationCheckSeconds",
-                                                             g_config.postOperationCheckSeconds, iniPathC);
+    g_app.config.postOperationCheckSeconds = GetPrivateProfileInt("Timing", "PostOperationCheckSeconds",
+                                                             g_app.config.postOperationCheckSeconds, iniPathC);
 
     // Read UI settings
-    g_config.showNotifications = GetPrivateProfileInt("UI", "ShowNotifications", g_config.showNotifications, iniPathC);
-    g_config.clickDebounceSeconds = GetPrivateProfileInt("UI", "ClickDebounceSeconds", g_config.clickDebounceSeconds, iniPathC);
+    g_app.config.showNotifications = GetPrivateProfileInt("UI", "ShowNotifications", g_app.config.showNotifications, iniPathC);
+    g_app.config.clickDebounceSeconds = GetPrivateProfileInt("UI", "ClickDebounceSeconds", g_app.config.clickDebounceSeconds, iniPathC);
 
     // Read advanced settings
-    g_config.debugMode = GetPrivateProfileInt("Advanced", "DebugMode", g_config.debugMode, iniPathC);
+    g_app.config.debugMode = GetPrivateProfileInt("Advanced", "DebugMode", g_app.config.debugMode, iniPathC);
 }
 
 // Async periodic drive check function
 void AsyncPeriodicCheck(HWND hwnd) {
     // Avoid checking during operations or too frequently
     ULONGLONG now = GetTickCount64();
-    if (g_isTransitioning || (now - g_lastPeriodicCheck < 60000)) {
+    if (g_app.isTransitioning || (now - g_app.lastPeriodicCheck < 60000)) {
         return; // Skip if operation in progress or checked within last minute
     }
 
-    g_lastPeriodicCheck = now;
+    g_app.lastPeriodicCheck = now;
     DriveState newState = DetectDriveState();
 
     // Only update if state actually changed
-    if (newState != g_driveState) {
+    if (newState != g_app.driveState) {
         // Post message to main thread for UI update
         PostMessage(hwnd, WM_COMMAND, IDM_REFRESH_STATUS, 0);
     }
@@ -709,7 +727,7 @@ DriveState DetectDriveState() {
                 *end-- = '\0';
             }
 
-            if (strcmp(start, g_config.targetSerial) == 0) {
+            if (strcmp(start, g_app.config.targetSerial) == 0) {
                 foundTarget = TRUE;
                 VariantClear(&vtProp);
 
@@ -759,35 +777,35 @@ int ExecuteCommand(const char* command, BOOL hide_window) {
 
 // Show balloon notification (safe, reliable approach)
 void ShowBalloonTip(const char* title, const char* text, DWORD icon) {
-    g_nid.uFlags = NIF_INFO;
-    g_nid.dwInfoFlags = icon;  // Use reliable system icons (NIIF_INFO, NIIF_WARNING, etc.)
-    strcpy_s(g_nid.szInfoTitle, sizeof(g_nid.szInfoTitle), "");
-    strcpy_s(g_nid.szInfo, sizeof(g_nid.szInfo), text);
-    g_nid.uTimeout = 3000;  // 3 seconds (ignored by modern Windows)
+    g_app.nid.uFlags = NIF_INFO;
+    g_app.nid.dwInfoFlags = icon;  // Use reliable system icons (NIIF_INFO, NIIF_WARNING, etc.)
+    strcpy_s(g_app.nid.szInfoTitle, sizeof(g_app.nid.szInfoTitle), "");
+    strcpy_s(g_app.nid.szInfo, sizeof(g_app.nid.szInfo), text);
+    g_app.nid.uTimeout = 3000;  // 3 seconds (ignored by modern Windows)
 
-    Shell_NotifyIcon(NIM_MODIFY, &g_nid);
+    Shell_NotifyIcon(NIM_MODIFY, &g_app.nid);
 
     // Reset flags to original state
-    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;  // Remove NIF_GUID for now
+    g_app.nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;  // Remove NIF_GUID for now
 }
 
 // Animation functions for progress feedback
 void StartProgressAnimation() {
-    g_animationFrame = 0;
-    g_animationTimer = SetTimer(g_hWnd, IDT_ANIMATION_TIMER, 500, NULL);  // 500ms animation speed
+    g_app.animationFrame = 0;
+    g_app.animationTimer = SetTimer(g_app.hWnd, IDT_ANIMATION_TIMER, 500, NULL);  // 500ms animation speed
 }
 
 void StopProgressAnimation() {
-    if (g_animationTimer) {
-        KillTimer(g_hWnd, IDT_ANIMATION_TIMER);
-        g_animationTimer = 0;
+    if (g_app.animationTimer) {
+        KillTimer(g_app.hWnd, IDT_ANIMATION_TIMER);
+        g_app.animationTimer = 0;
     }
     UpdateTrayIcon();  // Restore normal icon
 }
 
 // Async drive operation thread function
 void AsyncDriveOperation(HWND hwnd, bool isWake) {
-    const char* exe = isWake ? g_config.wakeCommand : g_config.sleepCommand;
+    const char* exe = isWake ? g_app.config.wakeCommand : g_app.config.sleepCommand;
 
     // Execute the command
     int result = ExecuteCommand(exe, TRUE);
@@ -800,44 +818,44 @@ void AsyncDriveOperation(HWND hwnd, bool isWake) {
 
 // Wake drive action
 void OnWakeDrive() {
-    if (g_isTransitioning) return;
+    if (g_app.isTransitioning) return;
 
-    g_isTransitioning = TRUE;
-    g_driveState = DS_TRANSITIONING;
+    g_app.isTransitioning = TRUE;
+    g_app.driveState = DS_TRANSITIONING;
     UpdateTrayIcon();
     ShowBalloonTip("", "Waking drive...", NIIF_INFO);
     StartProgressAnimation();
 
     // Run async operation in background thread
-    std::thread(AsyncDriveOperation, g_hWnd, true).detach();
+    std::thread(AsyncDriveOperation, g_app.hWnd, true).detach();
 }
 
 // Sleep drive action
 void OnSleepDrive() {
-    if (g_isTransitioning) return;
+    if (g_app.isTransitioning) return;
 
-    g_isTransitioning = TRUE;
-    g_driveState = DS_TRANSITIONING;
+    g_app.isTransitioning = TRUE;
+    g_app.driveState = DS_TRANSITIONING;
     UpdateTrayIcon();
     ShowBalloonTip("", "Sleeping drive...", NIIF_INFO);
     StartProgressAnimation();
 
     // Run async operation in background thread
-    std::thread(AsyncDriveOperation, g_hWnd, false).detach();
+    std::thread(AsyncDriveOperation, g_app.hWnd, false).detach();
 }
 
 // Refresh status action
 void OnRefreshStatus() {
-    g_driveState = DetectDriveState();
+    g_app.driveState = DetectDriveState();
     UpdateTrayIcon();
 
     // Show actual drive status in notification
     const char* statusMessage;
-    if (g_driveState == DS_ONLINE) {
+    if (g_app.driveState == DS_ONLINE) {
         statusMessage = "Drive Online";
-    } else if (g_driveState == DS_OFFLINE) {
+    } else if (g_app.driveState == DS_OFFLINE) {
         statusMessage = "Drive Offline";
-    } else if (g_driveState == DS_TRANSITIONING) {
+    } else if (g_app.driveState == DS_TRANSITIONING) {
         statusMessage = "Drive Transitioning...";
     } else {
         statusMessage = "Drive Status Unknown";
@@ -903,10 +921,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return 0;  // Exit silently
     }
 
-    g_hInst = hInstance;
+    g_app.hInstance = hInstance;
 
     // Register TaskbarCreated message for Explorer restart handling
-    WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
+    g_app.wmTaskbarCreated = RegisterWindowMessage("TaskbarCreated");
 
     // Register window class with proper icon support using WNDCLASSEX
     WNDCLASSEX wc = { sizeof(WNDCLASSEX) };
@@ -964,10 +982,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
 
     // Create hidden window for message handling
-    g_hWnd = CreateWindow("HDDControlTray", "HDD Control", 0, 0, 0, 0, 0,
+    g_app.hWnd = CreateWindow("HDDControlTray", "HDD Control", 0, 0, 0, 0, 0,
                           NULL, NULL, hInstance, NULL);
 
-    if (!g_hWnd) {
+    if (!g_app.hWnd) {
         MessageBox(NULL, "Failed to create window", "Error", MB_ICONERROR);
         ReleaseMutex(hMutex);
         CloseHandle(hMutex);
@@ -975,7 +993,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
 
     // Apply dark mode to our window for proper menu theming
-    ApplyDarkModeToWindow(g_hWnd);
+    ApplyDarkModeToWindow(g_app.hWnd);
 
     // Message loop
     MSG msg;
