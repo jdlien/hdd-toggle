@@ -149,6 +149,21 @@ PostOperationCheckSeconds=3
 - IDI_DRIVE_ON_ICON (101) - Drive online
 - IDI_DRIVE_OFF_ICON (102) - Drive offline
 
+## Releases
+
+When creating GitHub releases, the zip file **must** be named `hdd-toggle-windows.zip` (no version number). This allows the README's download link to always point to the latest release:
+
+```
+https://github.com/jdlien/hdd-toggle/releases/latest/download/hdd-toggle-windows.zip
+```
+
+The zip should contain:
+- `hdd-toggle.exe` - x64 build
+- `hdd-toggle-arm64.exe` - ARM64 build
+- `install.bat` / `uninstall.bat`
+- `hdd-control.ini`
+- `README.md` / `CHANGELOG.md`
+
 ## External Tools
 
 - **ImageMagick 7**: `C:\Program Files\ImageMagick-7.1.2-Q16-HDRI` - for icon conversion
