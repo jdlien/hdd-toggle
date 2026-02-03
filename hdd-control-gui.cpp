@@ -13,6 +13,7 @@
 #include <comdef.h>
 #include <shlwapi.h>
 #include <dwmapi.h>
+#include <thread>
 
 // Simple COM smart pointer template (like ComPtr but without WRL dependency)
 template<typename T>
@@ -124,12 +125,6 @@ typedef enum {
     DS_TRANSITIONING = 3
 } DriveState;
 
-// Async operation data structure
-struct AsyncOperationData {
-    HWND hwnd;
-    BOOL isWake;  // TRUE for wake, FALSE for sleep
-};
-
 // Configuration structure
 struct AppConfig {
     // Drive identification
@@ -171,8 +166,8 @@ int ExecuteCommand(const char* command, BOOL hide_window);
 void ShowBalloonTip(const char* title, const char* text, DWORD icon);
 void StartProgressAnimation();
 void StopProgressAnimation();
-DWORD WINAPI AsyncDriveOperation(LPVOID lpParam);
-DWORD WINAPI AsyncPeriodicCheck(LPVOID lpParam);
+void AsyncDriveOperation(HWND hwnd, bool isWake);
+void AsyncPeriodicCheck(HWND hwnd);
 void LoadConfiguration();
 void CreateDefaultIniFile();
 void OnWakeDrive();
@@ -286,7 +281,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 Shell_NotifyIcon(NIM_MODIFY, &g_nid);
             } else if (wParam == IDT_PERIODIC_CHECK) {
                 // Run periodic check in background thread
-                CreateThread(NULL, 0, AsyncPeriodicCheck, (LPVOID)hwnd, 0, NULL);
+                std::thread(AsyncPeriodicCheck, hwnd).detach();
             }
             break;
 
@@ -614,13 +609,11 @@ void LoadConfiguration() {
 }
 
 // Async periodic drive check function
-DWORD WINAPI AsyncPeriodicCheck(LPVOID lpParam) {
-    HWND hwnd = (HWND)lpParam;
-
+void AsyncPeriodicCheck(HWND hwnd) {
     // Avoid checking during operations or too frequently
     ULONGLONG now = GetTickCount64();
     if (g_isTransitioning || (now - g_lastPeriodicCheck < 60000)) {
-        return 0; // Skip if operation in progress or checked within last minute
+        return; // Skip if operation in progress or checked within last minute
     }
 
     g_lastPeriodicCheck = now;
@@ -631,8 +624,6 @@ DWORD WINAPI AsyncPeriodicCheck(LPVOID lpParam) {
         // Post message to main thread for UI update
         PostMessage(hwnd, WM_COMMAND, IDM_REFRESH_STATUS, 0);
     }
-
-    return 0;
 }
 
 // RAII wrapper for COM initialization
@@ -802,21 +793,16 @@ void StopProgressAnimation() {
 }
 
 // Async drive operation thread function
-DWORD WINAPI AsyncDriveOperation(LPVOID lpParam) {
-    AsyncOperationData* data = (AsyncOperationData*)lpParam;
-
-    const char* exe = data->isWake ? g_config.wakeCommand : g_config.sleepCommand;
+void AsyncDriveOperation(HWND hwnd, bool isWake) {
+    const char* exe = isWake ? g_config.wakeCommand : g_config.sleepCommand;
 
     // Execute the command
     int result = ExecuteCommand(exe, TRUE);
 
     // Post message back to main thread for UI updates
-    PostMessage(data->hwnd, WM_COMMAND,
-                data->isWake ? IDM_WAKE_COMPLETE : IDM_SLEEP_COMPLETE,
+    PostMessage(hwnd, WM_COMMAND,
+                isWake ? IDM_WAKE_COMPLETE : IDM_SLEEP_COMPLETE,
                 (LPARAM)result);
-
-    delete data;
-    return 0;
 }
 
 // Wake drive action
@@ -829,9 +815,8 @@ void OnWakeDrive() {
     ShowBalloonTip("", "Waking drive...", NIIF_INFO);
     StartProgressAnimation();
 
-    // Create thread for async operation
-    AsyncOperationData* data = new AsyncOperationData{g_hWnd, TRUE};
-    CreateThread(NULL, 0, AsyncDriveOperation, data, 0, NULL);
+    // Run async operation in background thread
+    std::thread(AsyncDriveOperation, g_hWnd, true).detach();
 }
 
 // Sleep drive action
@@ -844,9 +829,8 @@ void OnSleepDrive() {
     ShowBalloonTip("", "Sleeping drive...", NIIF_INFO);
     StartProgressAnimation();
 
-    // Create thread for async operation
-    AsyncOperationData* data = new AsyncOperationData{g_hWnd, FALSE};
-    CreateThread(NULL, 0, AsyncDriveOperation, data, 0, NULL);
+    // Run async operation in background thread
+    std::thread(AsyncDriveOperation, g_hWnd, false).detach();
 }
 
 // Refresh status action
