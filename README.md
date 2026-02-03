@@ -9,6 +9,8 @@ A Windows system tray application for controlling mechanical hard drive power vi
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
+**[⬇️ Download Latest Release](https://github.com/jdlien/hdd-toggle/releases/latest/download/hdd-toggle-windows.zip)**
+
 ## Overview
 
 HDD Toggle provides safe, automated power control for a mechanical hard drive through:
