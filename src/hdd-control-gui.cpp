@@ -164,7 +164,6 @@ struct AppConfig {
 
     // UI settings
     BOOL showNotifications;
-    DWORD clickDebounceSeconds;
 
     // Startup
     BOOL startMinimized;
@@ -197,7 +196,6 @@ struct AppState {
 
     // Timing
     ULONGLONG lastPeriodicCheck = 0;
-    ULONGLONG lastClickTime = 0;
     ULONGLONG lastMenuCloseTime = 0;  // For menu toggle behavior
 
     // Configuration
@@ -573,8 +571,6 @@ void CreateDefaultIniFile() {
         "[UI]\n"
         "# User interface settings\n"
         "#ShowNotifications=true\n"
-        "# Click debounce delay in seconds to prevent toast spam\n"
-        "#ClickDebounceSeconds=2\n"
         "\n"
         "[Advanced]\n"
         "# Advanced settings - modify with caution\n"
@@ -598,7 +594,6 @@ void LoadConfiguration() {
     g_app.config.periodicCheckMinutes = 10;
     g_app.config.postOperationCheckSeconds = 3;
     g_app.config.showNotifications = TRUE;
-    g_app.config.clickDebounceSeconds = 2;
     g_app.config.startMinimized = TRUE;
     g_app.config.checkElevation = TRUE;
     g_app.config.wmiTimeout = 30000;
@@ -633,7 +628,6 @@ void LoadConfiguration() {
 
     // Read UI settings
     g_app.config.showNotifications = GetPrivateProfileInt("UI", "ShowNotifications", g_app.config.showNotifications, iniPathC);
-    g_app.config.clickDebounceSeconds = GetPrivateProfileInt("UI", "ClickDebounceSeconds", g_app.config.clickDebounceSeconds, iniPathC);
 
     // Read advanced settings
     g_app.config.debugMode = GetPrivateProfileInt("Advanced", "DebugMode", g_app.config.debugMode, iniPathC);

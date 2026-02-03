@@ -324,7 +324,6 @@ TEST_CASE("Config has sensible defaults", "[config]") {
     CHECK(config.periodicCheckMinutes == 10);
     CHECK(config.postOperationCheckSeconds == 3);
     CHECK(config.showNotifications == true);
-    CHECK(config.clickDebounceSeconds == 2);
     CHECK(config.debugMode == false);
 }
 
@@ -354,14 +353,6 @@ TEST_CASE("ValidatePostOperationSeconds", "[config][validation]") {
     CHECK(ValidatePostOperationSeconds(1) == 1);   // At minimum
     CHECK(ValidatePostOperationSeconds(5) == 5);   // Normal
     CHECK(ValidatePostOperationSeconds(60) == 60); // Large value
-}
-
-TEST_CASE("ValidateClickDebounceSeconds", "[config][validation]") {
-    CHECK(ValidateClickDebounceSeconds(0) == 0);   // Zero is valid
-    CHECK(ValidateClickDebounceSeconds(2) == 2);   // Normal
-    CHECK(ValidateClickDebounceSeconds(10) == 10); // At maximum
-    CHECK(ValidateClickDebounceSeconds(11) == 10); // Above maximum
-    CHECK(ValidateClickDebounceSeconds(100) == 10); // Way above maximum
 }
 
 TEST_CASE("SerialMatches", "[config]") {

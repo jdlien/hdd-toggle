@@ -219,7 +219,6 @@ struct Config {
     unsigned int periodicCheckMinutes;
     unsigned int postOperationCheckSeconds;
     bool showNotifications;
-    unsigned int clickDebounceSeconds;
     bool debugMode;
 
     // Default values
@@ -231,7 +230,6 @@ struct Config {
         , periodicCheckMinutes(10)
         , postOperationCheckSeconds(3)
         , showNotifications(true)
-        , clickDebounceSeconds(2)
         , debugMode(false)
     {}
 };
@@ -244,11 +242,6 @@ inline unsigned int ValidatePeriodicCheckMinutes(unsigned int value) {
 // Validate post operation check seconds (minimum 1)
 inline unsigned int ValidatePostOperationSeconds(unsigned int value) {
     return value < 1 ? 1 : value;
-}
-
-// Validate click debounce seconds (0-10 reasonable range)
-inline unsigned int ValidateClickDebounceSeconds(unsigned int value) {
-    return value > 10 ? 10 : value;
 }
 
 // Check if a serial number matches the target (case-insensitive, whitespace-trimmed)

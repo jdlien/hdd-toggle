@@ -23,8 +23,6 @@ PostOperationCheckSeconds=3
 [UI]
 # Show toast notifications for status changes
 ShowNotifications=true
-# Prevent rapid clicks from spamming notifications (seconds)
-ClickDebounceSeconds=2
 
 [Advanced]
 # Enable debug logging (creates debug.log)

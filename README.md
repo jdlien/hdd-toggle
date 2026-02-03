@@ -65,7 +65,6 @@ PostOperationCheckSeconds=3
 
 [UI]
 ShowNotifications=true
-ClickDebounceSeconds=2
 ```
 
 ## Usage
