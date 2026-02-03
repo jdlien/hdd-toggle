@@ -13,9 +13,21 @@
 #include <comdef.h>
 #include <shlwapi.h>
 #include <dwmapi.h>
+#include <shobjidl.h>  // For SetCurrentProcessExplicitAppUserModelID
+#include <shlobj.h>  // For SHGetFolderPathW, CSIDL_PROGRAMS
+#include <propvarutil.h>  // For InitPropVariantFromString
+#include <propkey.h>  // For PKEY_AppUserModel_ID
+#pragma comment(lib, "propsys.lib")
 #include <thread>
 #include <string>
 #include <filesystem>
+
+// C++/WinRT for toast notifications (Windows 11)
+#include <winrt/base.h>
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Data.Xml.Dom.h>
+#include <winrt/Windows.UI.Notifications.h>
+#pragma comment(lib, "windowsapp")
 
 namespace fs = std::filesystem;
 
@@ -186,6 +198,7 @@ struct AppState {
     // Timing
     ULONGLONG lastPeriodicCheck = 0;
     ULONGLONG lastClickTime = 0;
+    ULONGLONG lastMenuCloseTime = 0;  // For menu toggle behavior
 
     // Configuration
     AppConfig config = {};
@@ -214,6 +227,10 @@ void OnWakeDrive();
 void OnSleepDrive();
 void OnRefreshStatus();
 BOOL IsRunningElevated();
+BOOL EnsureStartMenuShortcut();
+
+// AUMID for toast notifications
+const wchar_t* AUMID = L"HDDControl.TrayApp.1";
 
 // Global application state
 AppState g_app;
@@ -237,12 +254,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case WM_TRAYICON:
             switch (LOWORD(lParam)) {
                 case WM_LBUTTONUP:
-                    // Left-click: show context menu (same as right-click)
-                    ShowContextMenu(hwnd);
-                    break;
                 case WM_RBUTTONUP:
                 case WM_CONTEXTMENU:
-                    ShowContextMenu(hwnd);
+                    // Toggle behavior: ignore click if menu just closed (within 200ms)
+                    if (GetTickCount64() - g_app.lastMenuCloseTime > 200) {
+                        ShowContextMenu(hwnd);
+                    }
                     break;
             }
             break;
@@ -453,6 +470,9 @@ void ShowContextMenu(HWND hwnd) {
     // Use proper menu positioning that stays within screen bounds
     TrackPopupMenu(g_app.hMenu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_RIGHTALIGN, pt.x, pt.y, 0, hwnd, NULL);
     PostMessage(hwnd, WM_NULL, 0, 0);
+
+    // Record when menu closed for toggle behavior
+    g_app.lastMenuCloseTime = GetTickCount64();
 }
 
 // Update tray icon and tooltip based on current state
@@ -775,18 +795,47 @@ int ExecuteCommand(const char* command, BOOL hide_window) {
     return exit_code;
 }
 
-// Show balloon notification (safe, reliable approach)
+// Show toast notification using WinRT (Windows 11 modern notifications)
+// Falls back to legacy balloon if toast fails
 void ShowBalloonTip(const char* title, const char* text, DWORD icon) {
-    g_app.nid.uFlags = NIF_INFO;
-    g_app.nid.dwInfoFlags = icon;  // Use reliable system icons (NIIF_INFO, NIIF_WARNING, etc.)
-    strcpy_s(g_app.nid.szInfoTitle, sizeof(g_app.nid.szInfoTitle), "");
-    strcpy_s(g_app.nid.szInfo, sizeof(g_app.nid.szInfo), text);
-    g_app.nid.uTimeout = 3000;  // 3 seconds (ignored by modern Windows)
+    using namespace winrt::Windows::UI::Notifications;
+    using namespace winrt::Windows::Data::Xml::Dom;
 
-    Shell_NotifyIcon(NIM_MODIFY, &g_app.nid);
+    try {
+        // Initialize WinRT on this thread if needed
+        static bool winrtInitialized = false;
+        if (!winrtInitialized) {
+            winrt::init_apartment();
+            winrtInitialized = true;
+        }
 
-    // Reset flags to original state
-    g_app.nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;  // Remove NIF_GUID for now
+        // Convert to wide string
+        wchar_t wtext[256];
+        MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 256);
+
+        // Build toast XML
+        std::wstring xml = L"<toast duration=\"short\"><visual><binding template=\"ToastGeneric\">";
+        xml += L"<text>" + std::wstring(wtext) + L"</text>";
+        xml += L"</binding></visual></toast>";
+
+        XmlDocument doc;
+        doc.LoadXml(xml);
+
+        ToastNotification toast(doc);
+        toast.ExpiresOnReboot(true);  // Transient - won't persist in Action Center
+
+        auto notifier = ToastNotificationManager::CreateToastNotifier(AUMID);
+        notifier.Show(toast);
+    } catch (...) {
+        // Fallback to legacy balloon notification
+        g_app.nid.uFlags = NIF_INFO;
+        g_app.nid.dwInfoFlags = icon;
+        strcpy_s(g_app.nid.szInfoTitle, sizeof(g_app.nid.szInfoTitle), "");
+        strcpy_s(g_app.nid.szInfo, sizeof(g_app.nid.szInfo), text);
+        g_app.nid.uTimeout = 3000;
+        Shell_NotifyIcon(NIM_MODIFY, &g_app.nid);
+        g_app.nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    }
 }
 
 // Animation functions for progress feedback
@@ -881,6 +930,82 @@ BOOL IsRunningElevated() {
     return isElevated;
 }
 
+// Create Start Menu shortcut with AUMID for toast notifications
+// Toast notifications require a shortcut with AppUserModelID property set
+BOOL EnsureStartMenuShortcut() {
+    // Get the Start Menu Programs path
+    wchar_t startMenuPath[MAX_PATH];
+    if (FAILED(SHGetFolderPathW(NULL, CSIDL_PROGRAMS, NULL, 0, startMenuPath))) {
+        return FALSE;
+    }
+
+    // Build shortcut path
+    std::wstring shortcutPath = std::wstring(startMenuPath) + L"\\HDD Control.lnk";
+
+    // Check if shortcut already exists
+    if (GetFileAttributesW(shortcutPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        return TRUE;  // Already exists
+    }
+
+    // Get our executable path
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(NULL, exePath, MAX_PATH);
+
+    // Initialize COM for this operation
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
+        return FALSE;
+    }
+
+    BOOL success = FALSE;
+    IShellLinkW* pShellLink = nullptr;
+    IPersistFile* pPersistFile = nullptr;
+    IPropertyStore* pPropertyStore = nullptr;
+
+    // Create IShellLink instance
+    hr = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER,
+                          IID_IShellLinkW, (void**)&pShellLink);
+    if (FAILED(hr)) goto cleanup;
+
+    // Set shortcut properties
+    pShellLink->SetPath(exePath);
+    pShellLink->SetWorkingDirectory(GetExeDirectory().wstring().c_str());
+    pShellLink->SetDescription(L"HDD Control - System tray app for hard drive power management");
+
+    // Get IPropertyStore to set AUMID
+    hr = pShellLink->QueryInterface(IID_IPropertyStore, (void**)&pPropertyStore);
+    if (FAILED(hr)) goto cleanup;
+
+    // Set the AppUserModelID property
+    {
+        PROPVARIANT propVar;
+        hr = InitPropVariantFromString(AUMID, &propVar);
+        if (SUCCEEDED(hr)) {
+            hr = pPropertyStore->SetValue(PKEY_AppUserModel_ID, propVar);
+            PropVariantClear(&propVar);
+        }
+        if (FAILED(hr)) goto cleanup;
+
+        hr = pPropertyStore->Commit();
+        if (FAILED(hr)) goto cleanup;
+    }
+
+    // Save the shortcut
+    hr = pShellLink->QueryInterface(IID_IPersistFile, (void**)&pPersistFile);
+    if (FAILED(hr)) goto cleanup;
+
+    hr = pPersistFile->Save(shortcutPath.c_str(), TRUE);
+    success = SUCCEEDED(hr);
+
+cleanup:
+    if (pPersistFile) pPersistFile->Release();
+    if (pPropertyStore) pPropertyStore->Release();
+    if (pShellLink) pShellLink->Release();
+    CoUninitialize();
+
+    return success;
+}
+
 
 // Main entry point
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
@@ -889,6 +1014,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     // Initialize Windows 11 dark mode support (must be before window creation)
     InitDarkMode();
+
+    // Set AUMID for toast notifications (no Microsoft registration needed)
+    SetCurrentProcessExplicitAppUserModelID(AUMID);
+
+    // Ensure Start Menu shortcut exists (required for toast notifications)
+    EnsureStartMenuShortcut();
 
     // Create mutex to ensure single instance
     HANDLE hMutex = CreateMutex(NULL, TRUE, "Global\\HDDControl_SingleInstance");
@@ -905,17 +1036,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             // Send a message to show the context menu
             PostMessage(existingWindow, WM_COMMAND, IDM_REFRESH_STATUS, 0);
 
-            // Show a balloon tip that instance is already running
-            NOTIFYICONDATA nid = {0};
-            nid.cbSize = sizeof(nid);
-            nid.hWnd = existingWindow;
-            nid.uID = TRAY_ICON_ID;
-            nid.uFlags = NIF_INFO;
-            nid.dwInfoFlags = NIIF_INFO;  // Use standard info icon
-            strcpy_s(nid.szInfoTitle, sizeof(nid.szInfoTitle), "HDD Control");
-            strcpy_s(nid.szInfo, sizeof(nid.szInfo), "Application is already running");
-            nid.uTimeout = 2000;
-            Shell_NotifyIcon(NIM_MODIFY, &nid);
+            // Show toast notification that instance is already running
+            using namespace winrt::Windows::UI::Notifications;
+            using namespace winrt::Windows::Data::Xml::Dom;
+            try {
+                std::wstring xml = L"<toast duration=\"short\"><visual><binding template=\"ToastGeneric\">";
+                xml += L"<text>Application is already running</text>";
+                xml += L"</binding></visual></toast>";
+
+                XmlDocument doc;
+                doc.LoadXml(xml);
+
+                ToastNotification toast(doc);
+                toast.ExpiresOnReboot(true);
+
+                auto notifier = ToastNotificationManager::CreateToastNotifier(AUMID);
+                notifier.Show(toast);
+            } catch (...) {
+                // Silently fail
+            }
         }
 
         return 0;  // Exit silently
