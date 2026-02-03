@@ -12,8 +12,10 @@
 #include <wbemidl.h>
 #include <comdef.h>
 #include <shlwapi.h>
+#include <dwmapi.h>
 
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "user32.lib")
@@ -40,6 +42,54 @@
 #define IDI_MAIN_ICON 100
 #define IDI_DRIVE_ON_ICON 101
 #define IDI_DRIVE_OFF_ICON 102
+
+// Windows 11 Dark Mode support (undocumented APIs from uxtheme.dll)
+enum PreferredAppMode {
+    PAM_Default = 0,
+    PAM_AllowDark = 1,
+    PAM_ForceDark = 2,
+    PAM_ForceLight = 3,
+    PAM_Max = 4
+};
+
+typedef BOOL (WINAPI *fnAllowDarkModeForWindow)(HWND hWnd, BOOL allow);
+typedef PreferredAppMode (WINAPI *fnSetPreferredAppMode)(PreferredAppMode appMode);
+typedef void (WINAPI *fnFlushMenuThemes)();
+typedef BOOL (WINAPI *fnShouldAppsUseDarkMode)();
+
+static fnAllowDarkModeForWindow pAllowDarkModeForWindow = nullptr;
+static fnSetPreferredAppMode pSetPreferredAppMode = nullptr;
+static fnFlushMenuThemes pFlushMenuThemes = nullptr;
+static fnShouldAppsUseDarkMode pShouldAppsUseDarkMode = nullptr;
+
+// Initialize dark mode - call before creating windows
+void InitDarkMode() {
+    HMODULE hUxtheme = LoadLibraryExW(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (hUxtheme) {
+        // Load undocumented functions by ordinal
+        pAllowDarkModeForWindow = (fnAllowDarkModeForWindow)GetProcAddress(hUxtheme, MAKEINTRESOURCEA(133));
+        pSetPreferredAppMode = (fnSetPreferredAppMode)GetProcAddress(hUxtheme, MAKEINTRESOURCEA(135));
+        pFlushMenuThemes = (fnFlushMenuThemes)GetProcAddress(hUxtheme, MAKEINTRESOURCEA(136));
+        pShouldAppsUseDarkMode = (fnShouldAppsUseDarkMode)GetProcAddress(hUxtheme, MAKEINTRESOURCEA(132));
+
+        if (pSetPreferredAppMode) {
+            pSetPreferredAppMode(PAM_AllowDark);
+        }
+        if (pFlushMenuThemes) {
+            pFlushMenuThemes();
+        }
+    }
+}
+
+// Apply dark mode to a specific window
+void ApplyDarkModeToWindow(HWND hwnd) {
+    if (pAllowDarkModeForWindow) {
+        pAllowDarkModeForWindow(hwnd, TRUE);
+    }
+    // Also set the DWMWA_USE_IMMERSIVE_DARK_MODE attribute for title bar (if visible)
+    BOOL useDarkMode = TRUE;
+    DwmSetWindowAttribute(hwnd, 20, &useDarkMode, sizeof(useDarkMode));  // DWMWA_USE_IMMERSIVE_DARK_MODE
+}
 
 // Drive states - must be defined before use
 typedef enum {
@@ -110,30 +160,14 @@ HINSTANCE g_hInst;
 HWND g_hWnd;
 NOTIFYICONDATA g_nid;
 HMENU g_hMenu;
-HFONT g_hBoldMenuFont = NULL;  // Bold font for menu headers
 DriveState g_driveState = DS_UNKNOWN;
 BOOL g_isTransitioning = FALSE;
-char g_statusMenuText[64] = "";  // Store status text for owner-drawn menu
 UINT WM_TASKBARCREATED = 0;  // Will be set by RegisterWindowMessage
 UINT_PTR g_animationTimer = 0;
 int g_animationFrame = 0;
 ULONGLONG g_lastPeriodicCheck = 0;
 ULONGLONG g_lastClickTime = 0;
 AppConfig g_config = {0};
-
-// Ensure bold menu font is created
-static void EnsureBoldMenuFont(HWND hwnd) {
-    if (g_hBoldMenuFont) return;
-
-    NONCLIENTMETRICS ncm = { sizeof(ncm) };
-    SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
-
-    LOGFONT lf = ncm.lfMenuFont;
-    lf.lfWeight = FW_BOLD;
-    lf.lfQuality = CLEARTYPE_NATURAL_QUALITY;
-
-    g_hBoldMenuFont = CreateFontIndirect(&lf);
-}
 
 // Window procedure
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -239,63 +273,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             }
             break;
 
-        case WM_MEASUREITEM:
-            {
-                LPMEASUREITEMSTRUCT mis = (LPMEASUREITEMSTRUCT)lParam;
-                if (mis->CtlType == ODT_MENU && mis->itemID == IDM_STATUS_DISPLAY) {
-                    HDC hdc = GetDC(hwnd);
-                    HFONT hOldFont = (HFONT)SelectObject(hdc, g_hBoldMenuFont);
-
-                    LPCSTR txt = (LPCSTR)mis->itemData;
-                    SIZE sz = {0};
-                    GetTextExtentPoint32(hdc, txt, lstrlen(txt), &sz);
-
-                    UINT dpi = GetDpiForWindow(hwnd);
-                    int padX = MulDiv(12, dpi, 96);
-                    int padY = MulDiv(0, dpi, 96);
-
-                    mis->itemWidth = sz.cx + padX * 2;
-                    mis->itemHeight = sz.cy + padY * 2;
-
-                    SelectObject(hdc, hOldFont);
-                    ReleaseDC(hwnd, hdc);
-                    return TRUE;
-                }
-            }
-            break;
-
-        case WM_DRAWITEM:
-            {
-                LPDRAWITEMSTRUCT dis = (LPDRAWITEMSTRUCT)lParam;
-                if (dis->CtlType == ODT_MENU && dis->itemID == IDM_STATUS_DISPLAY) {
-                    // Fill background
-                    FillRect(dis->hDC, &dis->rcItem, GetSysColorBrush(COLOR_MENU));
-                    SetBkMode(dis->hDC, TRANSPARENT);
-                    SetTextColor(dis->hDC, GetSysColor(COLOR_MENUTEXT));
-
-                    HFONT hOldFont = (HFONT)SelectObject(dis->hDC, g_hBoldMenuFont);
-
-                    UINT dpi = GetDpiForWindow(g_hWnd);
-                    int padX = MulDiv(18, dpi, 96);
-                    RECT r = dis->rcItem;
-                    r.left += padX;
-
-                    DrawText(dis->hDC, (LPCSTR)dis->itemData, -1, &r, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
-
-                    SelectObject(dis->hDC, hOldFont);
-                    return TRUE;
-                }
-            }
-            break;
-
         case WM_DESTROY:
             RemoveTrayIcon();
             if (g_hMenu) {
                 DestroyMenu(g_hMenu);
-            }
-            if (g_hBoldMenuFont) {
-                DeleteObject(g_hBoldMenuFont);
-                g_hBoldMenuFont = NULL;
             }
             KillTimer(hwnd, IDT_STATUS_TIMER);
             KillTimer(hwnd, IDT_PERIODIC_CHECK);
@@ -403,21 +384,18 @@ void ShowContextMenu(HWND hwnd) {
 
     g_hMenu = CreatePopupMenu();
 
-    // Ensure bold font exists
-    EnsureBoldMenuFont(hwnd);
-
-    // Add status display at the top (bold heading that can't be clicked)
+    // Add status display at the top as disabled text (allows Windows 11 modern menu styling)
+    const char* statusText;
     if (g_driveState == DS_ONLINE) {
-        strcpy_s(g_statusMenuText, sizeof(g_statusMenuText), "Drive Online");
+        statusText = "Status: Drive Online";
     } else if (g_driveState == DS_OFFLINE) {
-        strcpy_s(g_statusMenuText, sizeof(g_statusMenuText), "Drive Offline");
+        statusText = "Status: Drive Offline";
     } else if (g_driveState == DS_TRANSITIONING) {
-        strcpy_s(g_statusMenuText, sizeof(g_statusMenuText), "Drive Transitioning...");
+        statusText = "Status: Transitioning...";
     } else {
-        strcpy_s(g_statusMenuText, sizeof(g_statusMenuText), "Drive Status Unknown");
+        statusText = "Status: Unknown";
     }
-    // Use MF_DISABLED to prevent interaction, pass text as itemData
-    AppendMenu(g_hMenu, MF_OWNERDRAW | MF_DISABLED, IDM_STATUS_DISPLAY, (LPCSTR)g_statusMenuText);
+    AppendMenu(g_hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, IDM_STATUS_DISPLAY, statusText);
     AppendMenu(g_hMenu, MF_SEPARATOR, 0, NULL);
 
     // Add appropriate action based on current drive state
@@ -937,6 +915,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // Initialize DPI awareness for modern scaling
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
+    // Initialize Windows 11 dark mode support (must be before window creation)
+    InitDarkMode();
+
     // Create mutex to ensure single instance
     HANDLE hMutex = CreateMutex(NULL, TRUE, "Global\\HDDControl_SingleInstance");
 
@@ -1038,6 +1019,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         CloseHandle(hMutex);
         return 1;
     }
+
+    // Apply dark mode to our window for proper menu theming
+    ApplyDarkModeToWindow(g_hWnd);
 
     // Message loop
     MSG msg;
