@@ -36,14 +36,29 @@ Perfect for NAS drives, backup drives, or any HDD you want to power down when no
 
 ### Installation
 
+**Using the installer (recommended):**
+
 1. Download the latest release or build from source
-2. Place executables in a folder (e.g., `C:\bin\`):
+2. Run `install.bat`
+3. Edit `%LOCALAPPDATA%\HDD-Toggle\hdd-control.ini` with your drive's serial number
+4. Launch "HDD Toggle" from the Start Menu
+
+The installer will:
+- Copy files to `%LOCALAPPDATA%\HDD-Toggle`
+- Create a Start Menu shortcut (required for toast notifications)
+- Optionally add to startup (runs elevated without UAC prompts)
+
+To uninstall, run `uninstall.bat`.
+
+**Manual installation:**
+
+1. Place executables in a folder (e.g., `C:\bin\`):
    - `hdd-control.exe` - Main tray application
    - `wake-hdd.exe` - Wake utility
    - `sleep-hdd.exe` - Sleep utility
    - `relay.exe` - Relay controller
-3. Edit `hdd-control.ini` with your drive's serial number
-4. Run `hdd-control.exe`
+2. Edit `hdd-control.ini` with your drive's serial number
+3. Run `hdd-control.exe`
 
 ### Configuration
 
@@ -171,7 +186,9 @@ hdd-toggle/
 │   └── util/               # Utility scripts
 ├── tests/                  # Unit tests (Catch2)
 ├── bin/                    # Build output
-└── coverage/               # Coverage reports
+├── coverage/               # Coverage reports
+├── install.bat             # Installer script
+└── uninstall.bat           # Uninstaller script
 ```
 
 ## Contributing
