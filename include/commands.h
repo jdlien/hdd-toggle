@@ -36,6 +36,10 @@ int ShowHelp();
 // Version command: Show version information
 int ShowVersion();
 
+// Helper: Control relay power (used by wake/sleep)
+// Simpler interface for internal use
+bool ControlRelayPower(bool on);
+
 } // namespace commands
 } // namespace hdd
 

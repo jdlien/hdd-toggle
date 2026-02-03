@@ -6,6 +6,7 @@
 #include "hdd-toggle.h"
 #include "core/process.h"
 #include "core/admin.h"
+#include "core/disk.h"
 #include <windows.h>
 #include <cstdio>
 #include <cstring>
@@ -33,8 +34,7 @@ SleepOptions ParseSleepArgs(int argc, char* argv[]) {
     SleepOptions opts;
 
     for (int i = 0; i < argc; i++) {
-        if (_stricmp(argv[i], "-help") == 0 || _stricmp(argv[i], "-h") == 0 ||
-            _stricmp(argv[i], "/?") == 0 || _stricmp(argv[i], "--help") == 0) {
+        if (core::IsHelpFlag(argv[i])) {
             opts.help = true;
         }
         else if (_stricmp(argv[i], "-offline") == 0 || _stricmp(argv[i], "--offline") == 0) {
@@ -197,12 +197,6 @@ bool TakeDiskOffline(int diskIndex) {
         printf("diskpart offline failed\n");
         return false;
     }
-}
-
-// Control relay via the relay command
-bool ControlRelayPower(bool on) {
-    char* args[] = { const_cast<char*>(on ? "on" : "off") };
-    return RunRelay(1, args) == EXIT_SUCCESS;
 }
 
 } // anonymous namespace

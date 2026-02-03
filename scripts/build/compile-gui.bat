@@ -35,6 +35,7 @@ cl.exe /nologo /O2 /MT /EHsc /std:c++17 /I include ^
     src\main.cpp ^
     src\core\process.cpp ^
     src\core\admin.cpp ^
+    src\core\disk.cpp ^
     src\commands\relay.cpp ^
     src\commands\wake.cpp ^
     src\commands\sleep.cpp ^
@@ -49,6 +50,7 @@ REM Clean up intermediate files
 if exist src\main.obj del src\main.obj >nul 2>nul
 if exist src\core\process.obj del src\core\process.obj >nul 2>nul
 if exist src\core\admin.obj del src\core\admin.obj >nul 2>nul
+if exist src\core\disk.obj del src\core\disk.obj >nul 2>nul
 if exist src\commands\relay.obj del src\commands\relay.obj >nul 2>nul
 if exist src\commands\wake.obj del src\commands\wake.obj >nul 2>nul
 if exist src\commands\sleep.obj del src\commands\sleep.obj >nul 2>nul

@@ -6,6 +6,7 @@
 #include "hdd-toggle.h"
 #include "core/process.h"
 #include "core/admin.h"
+#include "core/disk.h"
 #include <windows.h>
 #include <shellapi.h>
 #include <cstdio>
@@ -136,13 +137,6 @@ bool BringDiskOnline() {
     }
 }
 
-// Control relay via the relay command
-bool ControlRelayPower(bool on) {
-    // Call our own relay command
-    char* args[] = { const_cast<char*>(on ? "on" : "off") };
-    return RunRelay(1, args) == EXIT_SUCCESS;
-}
-
 void ShowWakeUsage() {
     printf("Wake HDD - Power on and initialize hard drive\n");
     printf("Usage: hdd-toggle wake [-h|--help]\n\n");
@@ -153,9 +147,7 @@ void ShowWakeUsage() {
 
 int RunWake(int argc, char* argv[]) {
     // Check for help flag
-    if (argc >= 1 && (strcmp(argv[0], "-h") == 0 ||
-                      strcmp(argv[0], "--help") == 0 ||
-                      strcmp(argv[0], "/?") == 0)) {
+    if (argc >= 1 && core::IsHelpFlag(argv[0])) {
         ShowWakeUsage();
         return EXIT_SUCCESS;
     }

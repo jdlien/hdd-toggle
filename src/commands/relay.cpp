@@ -122,6 +122,11 @@ void ShowRelayUsage() {
 
 } // anonymous namespace
 
+// Public helper for internal use by wake/sleep commands
+bool ControlRelayPower(bool on) {
+    return ControlRelay(0, on);
+}
+
 int RunRelay(int argc, char* argv[]) {
     // argv[0] is "relay", actual args start at argv[1]
     // Adjust for the fact that we receive args after "relay" command
